@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { geocode } from "../lib/geocode";
 
-export default function SearchPanel({ onGeocode }) {
+export default function SearchPanel({ onGeocode, onError, onReset }) {
   const [fromText, setFromText] = useState("");
   const [toText, setToText] = useState("");
   const [loading, setLoading] = useState({ from: false, to: false }); // tracks which field is geocoding
@@ -14,7 +14,7 @@ export default function SearchPanel({ onGeocode }) {
     setLoading((l) => ({ ...l, [field]: false }));
 
     if (!result) {
-      console.log(`no results for "${query}"`);
+      onError(`no results for "${query}"`);
       return;
     }
 
@@ -59,6 +59,9 @@ export default function SearchPanel({ onGeocode }) {
         onKeyDown={(e) => handleKeyDown("to", toText, e)}
         style={inputStyle}
       />
+      <button onClick={onReset} style={resetButtonStyle}>
+        clear
+      </button>
     </div>
   );
 }
@@ -69,5 +72,15 @@ const inputStyle = {
   padding: "8px 10px",
   fontSize: 14,
   outline: "none",
+  fontFamily: "inherit",
+};
+
+const resetButtonStyle = {
+  border: "1px solid #e5e7eb",
+  borderRadius: 6,
+  padding: "6px 0",
+  fontSize: 13,
+  cursor: "pointer",
+  background: "#f9fafb",
   fontFamily: "inherit",
 };

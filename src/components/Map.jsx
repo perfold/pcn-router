@@ -15,6 +15,9 @@ export default function Map() {
   const markers = useRef({ start: null, end: null });
   const [networkVisible, setNetworkVisible] = useState(false); // pcn network layer visibility toggle
 
+  const [error, setError] = useState(null);
+  const [resetKey, setResetKey] = useState(0);
+
   const [distanceM, setDistanceM] = useState(null); // dist in metres, used to calc time
   const [speed, setSpeed] = useState(15); // km/h, user adjustable (slider)
   const geocodedWaypoints = useRef([null, null]); // [fromNodeId, toNodeId] set by search
@@ -89,6 +92,7 @@ export default function Map() {
 
       if (waypoints.current.length === 1) {
         // 1st click, place start marker and clear any previous route and markers
+        setError(null);
         if (markers.current.start) markers.current.start.remove();
         if (markers.current.end) markers.current.end.remove();
         markers.current.start = new Marker({ color: "#008000" })
@@ -141,7 +145,7 @@ export default function Map() {
             { padding: 80, duration: 1000 },
           );
         } else {
-          console.log("no route found between these points");
+          setError("no route found");
         }
         waypoints.current = []; // reset for next route
       }
@@ -149,6 +153,7 @@ export default function Map() {
   }, []);
 
   function handleGeocode(field, lat, lng) {
+    setError(null);
     if (!graphReady.current) return;
 
     const nodeId = snapToNode(lat, lng);
@@ -201,6 +206,8 @@ export default function Map() {
           ],
           { padding: 80, duration: 1000 },
         );
+      } else {
+        setError("no route found");
       }
     }
   }
@@ -215,10 +222,52 @@ export default function Map() {
     );
   }
 
+  // reset navigation / clear start/end fields
+  function reset() {
+    if (markers.current.start) markers.current.start.remove();
+    if (markers.current.end) markers.current.end.remove();
+    markers.current = { start: null, end: null };
+    waypoints.current = [];
+    geocodedWaypoints.current = [null, null];
+    setDistanceM(null);
+    setError(null);
+    map.current
+      .getSource("route")
+      ?.setData({ type: "FeatureCollection", features: [] });
+    setResetKey((k) => k + 1); // clear search panel text fields
+  }
+
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
       <div ref={container} style={{ width: "100%", height: "100%" }} />
-      <SearchPanel onGeocode={handleGeocode} />
+
+      <SearchPanel
+        key={resetKey}
+        onGeocode={handleGeocode}
+        onError={setError}
+        onReset={reset}
+      />
+
+      {/* error message shown below search panel */}
+      {error && (
+        <div
+          style={{
+            position: "absolute",
+            top: 110,
+            left: 16,
+            background: "#fef2f2",
+            border: "1px solid #fecaca",
+            color: "#dc2626",
+            borderRadius: 8,
+            padding: "8px 12px",
+            fontSize: 13,
+            maxWidth: 220,
+          }}
+        >
+          {error}
+        </div>
+      )}
+
       <StatsPanel
         distanceM={distanceM}
         speed={speed}
