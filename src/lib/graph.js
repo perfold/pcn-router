@@ -24,9 +24,7 @@ function haversine(a, b) {
   return R * 2 * Math.atan2(Math.sqrt(c), Math.sqrt(1 - c));
 }
 
-export async function loadGraph() {
-  const res = await fetch("/data/graph.geojson");
-  const geojson = await res.json();
+export async function loadGraph(geojson) {
   const features = geojson.features;
 
   graph = createGraph(); // creates graph object, for a*
@@ -101,7 +99,7 @@ export function findRoute(startId, endId) {
   const result = finder.find(startId, endId);
   if (!result || result.length === 0) return null;
 
-  // ngraph returns nodes end→start, so we need to reverse it
+  // ngraph returns nodes end to start, so we need to reverse it
   const nodeIds = result.map((n) => n.id).reverse();
 
   // stitch together edge geometries for accurate path drawing
@@ -112,5 +110,15 @@ export function findRoute(startId, endId) {
     if (edgeCoords) coords.push(...edgeCoords);
   }
 
-  return { type: "LineString", coordinates: coords };
+  let distanceM = 0; // calc distance in metres, so we can display it in the GUI
+  for (let i = 0; i < coords.length - 1; i++) {
+    const [lng1, lat1] = coords[i];
+    const [lng2, lat2] = coords[i + 1];
+    distanceM += haversine({ lat: lat1, lng: lng1 }, { lat: lat2, lng: lng2 });
+  }
+
+  return {
+    geometry: { type: "LineString", coordinates: coords },
+    distanceM,
+  };
 }

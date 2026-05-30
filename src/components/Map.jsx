@@ -1,6 +1,8 @@
-import { useEffect, useRef } from "react";
-import { Map as MaplibreMap, NavigationControl } from "maplibre-gl";
+import { useEffect, useRef, useState } from "react";
+import { Map as MaplibreMap, NavigationControl, Marker } from "maplibre-gl";
 import { loadGraph, snapToNode, findRoute } from "../lib/graph";
+import StatsPanel from "./StatsPanel";
+import SearchPanel from "./SearchPanel";
 
 const SINGAPORE = { lng: 103.8198, lat: 1.3521 }; // map centres here on load
 const ZOOM = 11;
@@ -10,6 +12,12 @@ export default function Map() {
   const map = useRef(null);
   const graphReady = useRef(false); // true once graph.geojson is loaded
   const waypoints = useRef([]); // [start node, end node]
+  const markers = useRef({ start: null, end: null });
+
+  const [distanceM, setDistanceM] = useState(null); // dist in metres, used to calc time
+  const [speed, setSpeed] = useState(15); // km/h, user adjustable (slider)
+  const [fromText, setFromText] = useState(""); // location search (will do geocoding later)
+  const [toText, setToText] = useState("");
 
   useEffect(() => {
     if (map.current) return; // prevent reinitialising on re-render
@@ -21,7 +29,7 @@ export default function Map() {
       zoom: ZOOM,
     });
 
-    map.current.addControl(new NavigationControl(), "top-right");
+    map.current.addControl(new NavigationControl(), "bottom-right");
 
     // wait for base map to finish loading before adding layers
     map.current.on("load", async () => {
@@ -42,6 +50,7 @@ export default function Map() {
         paint: {
           "line-color": "#750000",
           "line-width": 2,
+          "line-opacity": 0.5,
         },
       });
 
@@ -54,6 +63,7 @@ export default function Map() {
         paint: {
           "line-color": "#808080",
           "line-width": 1,
+          "line-opacity": 0.5,
         },
       });
       // add an empty source for the route, updated when route is found
@@ -72,7 +82,7 @@ export default function Map() {
         },
       });
 
-      await loadGraph();
+      await loadGraph(geojson);
       graphReady.current = true;
     });
 
@@ -88,17 +98,36 @@ export default function Map() {
 
       waypoints.current.push(nodeId);
 
-      if (waypoints.current.length === 2) {
-        // if 2 points (start and end) selected, find route
-        const [startId, endId] = waypoints.current;
-        const route = findRoute(startId, endId);
+      if (waypoints.current.length === 1) {
+        // place start marker and clear any previous route and markers
+        if (markers.current.start) markers.current.start.remove();
+        if (markers.current.end) markers.current.end.remove();
+        markers.current.start = new Marker({ color: "#008000" })
+          .setLngLat([lng, lat])
+          .addTo(map.current);
+        setDistanceM(null);
+        map.current
+          .getSource("route")
+          .setData({ type: "FeatureCollection", features: [] });
+      }
 
-        if (route) {
+      if (waypoints.current.length === 2) {
+        // if 2nd click, place end marker and find route
+        markers.current.end = new Marker({ color: "#D30000" })
+          .setLngLat([lng, lat])
+          .addTo(map.current);
+
+        // find route
+        const [startId, endId] = waypoints.current;
+        const result = findRoute(startId, endId);
+
+        if (result) {
           map.current.getSource("route").setData({
             // push route to GUI
             type: "Feature",
-            geometry: route,
+            geometry: result.geometry,
           });
+          setDistanceM(result.distanceM);
         } else {
           console.log("no route found between these points");
         }
@@ -107,5 +136,20 @@ export default function Map() {
     });
   }, []);
 
-  return <div ref={container} style={{ width: "100%", height: "100%" }} />;
+  return (
+    <div style={{ width: "100%", height: "100%", position: "relative" }}>
+      <div ref={container} style={{ width: "100%", height: "100%" }} />
+      <SearchPanel
+        from={fromText}
+        to={toText}
+        onFromChange={setFromText}
+        onToChange={setToText}
+      />
+      <StatsPanel
+        distanceM={distanceM}
+        speed={speed}
+        onSpeedChange={setSpeed}
+      />
+    </div>
+  );
 }
