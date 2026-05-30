@@ -1,17 +1,19 @@
-import { useState } from "react";
 import { geocode } from "../lib/geocode";
 
-export default function SearchPanel({ onGeocode, onError, onReset }) {
-  const [fromText, setFromText] = useState("");
-  const [toText, setToText] = useState("");
-  const [loading, setLoading] = useState({ from: false, to: false }); // tracks which field is geocoding
-
+export default function SearchPanel({
+  fromText,
+  toText,
+  onFromChange,
+  onToChange,
+  onGeocode,
+  onError,
+  onReset,
+  onFlip,
+}) {
   async function handleSubmit(field, query) {
     if (!query.trim()) return;
-    setLoading((l) => ({ ...l, [field]: true }));
 
     const result = await geocode(query);
-    setLoading((l) => ({ ...l, [field]: false }));
 
     if (!result) {
       onError(`no results for "${query}"`);
@@ -44,18 +46,22 @@ export default function SearchPanel({ onGeocode, onError, onReset }) {
       {/* input start point */}
       <input
         type="text"
-        placeholder={loading.from ? "searching..." : "from"}
+        placeholder="start"
         value={fromText}
-        onChange={(e) => setFromText(e.target.value)}
+        onChange={(e) => onFromChange(e.target.value)}
         onKeyDown={(e) => handleKeyDown("from", fromText, e)}
         style={inputStyle}
       />
+      {/* flip button */}
+      <button onClick={onFlip} style={flipButtonStyle}>
+        ⇅
+      </button>
       {/* input end pt */}
       <input
         type="text"
-        placeholder={loading.to ? "searching..." : "to"}
+        placeholder="end"
         value={toText}
-        onChange={(e) => setToText(e.target.value)}
+        onChange={(e) => onToChange(e.target.value)}
         onKeyDown={(e) => handleKeyDown("to", toText, e)}
         style={inputStyle}
       />
@@ -80,6 +86,16 @@ const resetButtonStyle = {
   borderRadius: 6,
   padding: "6px 0",
   fontSize: 13,
+  cursor: "pointer",
+  background: "#f9fafb",
+  fontFamily: "inherit",
+};
+
+const flipButtonStyle = {
+  border: "1px solid #e5e7eb",
+  borderRadius: 6,
+  padding: "4px 0",
+  fontSize: 16,
   cursor: "pointer",
   background: "#f9fafb",
   fontFamily: "inherit",

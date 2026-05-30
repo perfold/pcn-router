@@ -22,12 +22,42 @@ export default function Map() {
   const [speed, setSpeed] = useState(15); // km/h, user adjustable (slider)
   const geocodedWaypoints = useRef([null, null]); // [fromNodeId, toNodeId] set by search
 
+  const currentRoute = useRef({
+    fromId: null,
+    toId: null,
+    fromLngLat: null,
+    toLngLat: null,
+  }); // used for flip
+  const [fromText, setFromText] = useState("");
+  const [toText, setToText] = useState("");
+
+  // zooms map to fit a route's coordinate array
+  function fitToRoute(coords) {
+    let minLng = Infinity,
+      maxLng = -Infinity;
+    let minLat = Infinity,
+      maxLat = -Infinity;
+    coords.forEach(([lng, lat]) => {
+      if (lng < minLng) minLng = lng;
+      if (lng > maxLng) maxLng = lng;
+      if (lat < minLat) minLat = lat;
+      if (lat > maxLat) maxLat = lat;
+    });
+    map.current.fitBounds(
+      [
+        [minLng, minLat],
+        [maxLng, maxLat],
+      ],
+      { padding: 80, duration: 1000 },
+    );
+  }
+
   useEffect(() => {
     if (map.current) return; // prevent reinitialising on re-render
 
     map.current = new MaplibreMap({
       container: container.current,
-      style: "https://tiles.openfreemap.org/styles/liberty",
+      style: "https://tiles.openfreemap.org/styles/bright", // purely 2d map, better performance
       center: [SINGAPORE.lng, SINGAPORE.lat],
       zoom: ZOOM,
     });
@@ -122,28 +152,11 @@ export default function Map() {
           });
           setDistanceM(result.distanceM);
 
+          currentRoute.current.toId = endId;
+          currentRoute.current.toLngLat = [lng, lat];
+
           // zoom out to show the entire extent of the route
-          const coords = result.geometry.coordinates;
-
-          let minLng = Infinity,
-            maxLng = -Infinity;
-          let minLat = Infinity,
-            maxLat = -Infinity;
-
-          coords.forEach(([lng, lat]) => {
-            if (lng < minLng) minLng = lng;
-            if (lng > maxLng) maxLng = lng;
-            if (lat < minLat) minLat = lat;
-            if (lat > maxLat) maxLat = lat;
-          });
-
-          map.current.fitBounds(
-            [
-              [minLng, minLat],
-              [maxLng, maxLat],
-            ],
-            { padding: 80, duration: 1000 },
-          );
+          fitToRoute(result.geometry.coordinates);
         } else {
           setError("no route found");
         }
@@ -165,6 +178,8 @@ export default function Map() {
         .setLngLat([lng, lat])
         .addTo(map.current);
       geocodedWaypoints.current[0] = nodeId;
+      currentRoute.current.fromId = nodeId; // store node for flip
+      currentRoute.current.fromLngLat = [lng, lat];
       map.current.flyTo({ center: [lng, lat], zoom: 14 }); // move to start pt
     } else {
       if (markers.current.end) markers.current.end.remove();
@@ -172,6 +187,11 @@ export default function Map() {
         .setLngLat([lng, lat])
         .addTo(map.current);
       geocodedWaypoints.current[1] = nodeId;
+      currentRoute.current.toId = nodeId; // store for flip
+      currentRoute.current.toLngLat = [lng, lat];
+      if (!geocodedWaypoints.current[0])
+        // only fly if 'from' isn't set yet
+        map.current.flyTo({ center: [lng, lat], zoom: 14 });
     }
 
     // route automatically once both fields are geocoded
@@ -183,35 +203,14 @@ export default function Map() {
           .getSource("route")
           .setData({ type: "Feature", geometry: result.geometry });
         setDistanceM(result.distanceM);
-
-        // zoom out to show the entire extent of the route
-        const coords = result.geometry.coordinates;
-
-        let minLng = Infinity,
-          maxLng = -Infinity;
-        let minLat = Infinity,
-          maxLat = -Infinity;
-
-        coords.forEach(([lng, lat]) => {
-          if (lng < minLng) minLng = lng;
-          if (lng > maxLng) maxLng = lng;
-          if (lat < minLat) minLat = lat;
-          if (lat > maxLat) maxLat = lat;
-        });
-
-        map.current.fitBounds(
-          [
-            [minLng, minLat],
-            [maxLng, maxLat],
-          ],
-          { padding: 80, duration: 1000 },
-        );
+        fitToRoute(result.geometry.coordinates);
       } else {
         setError("no route found");
       }
     }
   }
 
+  // pcn visibility toggle
   function toggleNetwork() {
     const next = !networkVisible;
     setNetworkVisible(next);
@@ -237,6 +236,67 @@ export default function Map() {
     setResetKey((k) => k + 1); // clear search panel text fields
   }
 
+  // swap the start and end pts
+  function flip() {
+    const { fromId, toId, fromLngLat, toLngLat } = currentRoute.current;
+
+    // swap stored state
+    currentRoute.current = {
+      fromId: toId,
+      toId: fromId,
+      fromLngLat: toLngLat,
+      toLngLat: fromLngLat,
+    };
+    geocodedWaypoints.current = [toId ?? null, fromId ?? null];
+
+    // if both points exist, just move markers to swapped positions
+    if (fromLngLat && toLngLat) {
+      markers.current.start?.setLngLat(toLngLat);
+      markers.current.end?.setLngLat(fromLngLat);
+    }
+    // if only start exists, remove start and create end at that position
+    else if (fromLngLat && !toLngLat) {
+      markers.current.start?.remove();
+      markers.current.start = null;
+      markers.current.end = new Marker({ color: "#D30000" })
+        .setLngLat(fromLngLat)
+        .addTo(map.current);
+    }
+    // if only end exists, remove end and create start at that position
+    else if (!fromLngLat && toLngLat) {
+      markers.current.end?.remove();
+      markers.current.end = null;
+      markers.current.start = new Marker({ color: "#008000" })
+        .setLngLat(toLngLat)
+        .addTo(map.current);
+    }
+
+    // swap text fields
+    setFromText(toText);
+    setToText(fromText);
+
+    // re-route if both points exist after flip
+    const [newFromId, newToId] = geocodedWaypoints.current;
+    if (newFromId && newToId) {
+      const result = findRoute(newFromId, newToId);
+      if (result) {
+        map.current
+          .getSource("route")
+          .setData({ type: "Feature", geometry: result.geometry });
+        setDistanceM(result.distanceM);
+        fitToRoute(result.geometry.coordinates);
+      } else {
+        setError("no route found");
+      }
+    } else {
+      // if only a single point after flip, clear any existing route
+      map.current
+        .getSource("route")
+        ?.setData({ type: "FeatureCollection", features: [] });
+      setDistanceM(null);
+    }
+  }
+
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
       <div ref={container} style={{ width: "100%", height: "100%" }} />
@@ -246,6 +306,11 @@ export default function Map() {
         onGeocode={handleGeocode}
         onError={setError}
         onReset={reset}
+        onFlip={flip}
+        fromText={fromText}
+        toText={toText}
+        onFromChange={setFromText}
+        onToChange={setToText}
       />
 
       {/* error message shown below search panel */}
