@@ -16,8 +16,7 @@ export default function Map() {
 
   const [distanceM, setDistanceM] = useState(null); // dist in metres, used to calc time
   const [speed, setSpeed] = useState(15); // km/h, user adjustable (slider)
-  const [fromText, setFromText] = useState(""); // location search (will do geocoding later)
-  const [toText, setToText] = useState("");
+  const geocodedWaypoints = useRef([null, null]); // [fromNodeId, toNodeId] set by search
 
   useEffect(() => {
     if (map.current) return; // prevent reinitialising on re-render
@@ -78,7 +77,7 @@ export default function Map() {
         source: "route",
         paint: {
           "line-color": "#FF6E00",
-          "line-width": 4,
+          "line-width": 6,
         },
       });
 
@@ -99,7 +98,7 @@ export default function Map() {
       waypoints.current.push(nodeId);
 
       if (waypoints.current.length === 1) {
-        // place start marker and clear any previous route and markers
+        // 1st click, place start marker and clear any previous route and markers
         if (markers.current.start) markers.current.start.remove();
         if (markers.current.end) markers.current.end.remove();
         markers.current.start = new Marker({ color: "#008000" })
@@ -128,6 +127,29 @@ export default function Map() {
             geometry: result.geometry,
           });
           setDistanceM(result.distanceM);
+
+          // zoom out to show the entire extent of the route
+          const coords = result.geometry.coordinates;
+
+          let minLng = Infinity,
+            maxLng = -Infinity;
+          let minLat = Infinity,
+            maxLat = -Infinity;
+
+          coords.forEach(([lng, lat]) => {
+            if (lng < minLng) minLng = lng;
+            if (lng > maxLng) maxLng = lng;
+            if (lat < minLat) minLat = lat;
+            if (lat > maxLat) maxLat = lat;
+          });
+
+          map.current.fitBounds(
+            [
+              [minLng, minLat],
+              [maxLng, maxLat],
+            ],
+            { padding: 80, duration: 1000 },
+          );
         } else {
           console.log("no route found between these points");
         }
@@ -136,15 +158,67 @@ export default function Map() {
     });
   }, []);
 
+  function handleGeocode(field, lat, lng) {
+    if (!graphReady.current) return;
+
+    const nodeId = snapToNode(lat, lng);
+    if (!nodeId) return;
+
+    if (field === "from") {
+      if (markers.current.start) markers.current.start.remove();
+      markers.current.start = new Marker({ color: "#008000" })
+        .setLngLat([lng, lat])
+        .addTo(map.current);
+      geocodedWaypoints.current[0] = nodeId;
+      map.current.flyTo({ center: [lng, lat], zoom: 14 }); // move to start pt
+    } else {
+      if (markers.current.end) markers.current.end.remove();
+      markers.current.end = new Marker({ color: "#D30000" })
+        .setLngLat([lng, lat])
+        .addTo(map.current);
+      geocodedWaypoints.current[1] = nodeId;
+    }
+
+    // route automatically once both fields are geocoded
+    const [fromId, toId] = geocodedWaypoints.current;
+    if (fromId && toId) {
+      const result = findRoute(fromId, toId);
+      if (result) {
+        map.current
+          .getSource("route")
+          .setData({ type: "Feature", geometry: result.geometry });
+        setDistanceM(result.distanceM);
+
+        // zoom out to show the entire extent of the route
+        const coords = result.geometry.coordinates;
+
+        let minLng = Infinity,
+          maxLng = -Infinity;
+        let minLat = Infinity,
+          maxLat = -Infinity;
+
+        coords.forEach(([lng, lat]) => {
+          if (lng < minLng) minLng = lng;
+          if (lng > maxLng) maxLng = lng;
+          if (lat < minLat) minLat = lat;
+          if (lat > maxLat) maxLat = lat;
+        });
+
+        map.current.fitBounds(
+          [
+            [minLng, minLat],
+            [maxLng, maxLat],
+          ],
+          { padding: 80, duration: 1000 },
+        );
+      }
+    }
+  }
+
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
       <div ref={container} style={{ width: "100%", height: "100%" }} />
-      <SearchPanel
-        from={fromText}
-        to={toText}
-        onFromChange={setFromText}
-        onToChange={setToText}
-      />
+      <SearchPanel onGeocode={handleGeocode} />
       <StatsPanel
         distanceM={distanceM}
         speed={speed}

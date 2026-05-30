@@ -1,4 +1,30 @@
-export default function SearchPanel({ from, to, onFromChange, onToChange }) {
+import { useState } from "react";
+import { geocode } from "../lib/geocode";
+
+export default function SearchPanel({ onGeocode }) {
+  const [fromText, setFromText] = useState("");
+  const [toText, setToText] = useState("");
+  const [loading, setLoading] = useState({ from: false, to: false }); // tracks which field is geocoding
+
+  async function handleSubmit(field, query) {
+    if (!query.trim()) return;
+    setLoading((l) => ({ ...l, [field]: true }));
+
+    const result = await geocode(query);
+    setLoading((l) => ({ ...l, [field]: false }));
+
+    if (!result) {
+      console.log(`no results for "${query}"`);
+      return;
+    }
+
+    onGeocode(field, result.lat, result.lng);
+  }
+
+  function handleKeyDown(field, query, e) {
+    if (e.key === "Enter") handleSubmit(field, query);
+  }
+
   return (
     <div
       style={{
@@ -17,16 +43,18 @@ export default function SearchPanel({ from, to, onFromChange, onToChange }) {
     >
       <input
         type="text"
-        placeholder="start"
-        value={from}
-        onChange={(e) => onFromChange(e.target.value)}
+        placeholder={loading.from ? "searching..." : "from"}
+        value={fromText}
+        onChange={(e) => setFromText(e.target.value)}
+        onKeyDown={(e) => handleKeyDown("from", fromText, e)}
         style={inputStyle}
       />
       <input
         type="text"
-        placeholder="end"
-        value={to}
-        onChange={(e) => onToChange(e.target.value)}
+        placeholder={loading.to ? "searching..." : "to"}
+        value={toText}
+        onChange={(e) => setToText(e.target.value)}
+        onKeyDown={(e) => handleKeyDown("to", toText, e)}
         style={inputStyle}
       />
     </div>
@@ -39,5 +67,5 @@ const inputStyle = {
   padding: "8px 10px",
   fontSize: 14,
   outline: "none",
-  fontFamily: "inherit", // use Monserrat (best font)
+  fontFamily: "inherit",
 };
