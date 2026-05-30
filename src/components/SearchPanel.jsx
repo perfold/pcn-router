@@ -41,6 +41,7 @@ export default function SearchPanel({ onGeocode }) {
         minWidth: 220,
       }}
     >
+      {/* input start point */}
       <input
         type="text"
         placeholder={loading.from ? "searching..." : "from"}
@@ -49,6 +50,7 @@ export default function SearchPanel({ onGeocode }) {
         onKeyDown={(e) => handleKeyDown("from", fromText, e)}
         style={inputStyle}
       />
+      {/* input end pt */}
       <input
         type="text"
         placeholder={loading.to ? "searching..." : "to"}

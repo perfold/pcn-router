@@ -13,6 +13,7 @@ export default function Map() {
   const graphReady = useRef(false); // true once graph.geojson is loaded
   const waypoints = useRef([]); // [start node, end node]
   const markers = useRef({ start: null, end: null });
+  const [networkVisible, setNetworkVisible] = useState(false); // pcn network layer visibility toggle
 
   const [distanceM, setDistanceM] = useState(null); // dist in metres, used to calc time
   const [speed, setSpeed] = useState(15); // km/h, user adjustable (slider)
@@ -51,20 +52,9 @@ export default function Map() {
           "line-width": 2,
           "line-opacity": 0.5,
         },
+        layout: { visibility: "none" }, // hidden by default until user toggles it on
       });
 
-      // osm-only paths used to connect dedicated segments
-      map.current.addLayer({
-        id: "graph-footway",
-        type: "line",
-        source: "graph",
-        filter: ["==", ["get", "path_type"], "footway"],
-        paint: {
-          "line-color": "#808080",
-          "line-width": 1,
-          "line-opacity": 0.5,
-        },
-      });
       // add an empty source for the route, updated when route is found
       map.current.addSource("route", {
         type: "geojson",
@@ -215,6 +205,16 @@ export default function Map() {
     }
   }
 
+  function toggleNetwork() {
+    const next = !networkVisible;
+    setNetworkVisible(next);
+    map.current.setLayoutProperty(
+      "graph-dedicated",
+      "visibility",
+      next ? "visible" : "none",
+    );
+  }
+
   return (
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
       <div ref={container} style={{ width: "100%", height: "100%" }} />
@@ -223,6 +223,8 @@ export default function Map() {
         distanceM={distanceM}
         speed={speed}
         onSpeedChange={setSpeed}
+        networkVisible={networkVisible}
+        onToggleNetwork={toggleNetwork}
       />
     </div>
   );
