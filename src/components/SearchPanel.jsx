@@ -29,7 +29,11 @@ export default function SearchPanel({
   }
 
   function handleKeyDown(field, query, e) {
-    if (e.key === "Enter") handleSubmit(field, query);
+    if (e.key === "Enter") {
+      e.preventDefault(); // prevents the "move to next field" behaviour
+      if (field === "to") e.target.blur(); // if done typing end point, hide keyboard
+      handleSubmit(field, query);
+    }
   }
 
   // export gpx function
@@ -101,6 +105,7 @@ ${trackpoints}
             value={fromText}
             onChange={(e) => onFromChange(e.target.value)}
             onKeyDown={(e) => handleKeyDown("from", fromText, e)}
+            enterKeyHint="search"
             style={{
               fontSize: fs,
               padding: pad,
@@ -119,6 +124,7 @@ ${trackpoints}
             value={toText}
             onChange={(e) => onToChange(e.target.value)}
             onKeyDown={(e) => handleKeyDown("to", toText, e)}
+            enterKeyHint="search"
             style={{
               fontSize: fs,
               padding: pad,
