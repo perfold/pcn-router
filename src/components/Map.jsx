@@ -21,6 +21,8 @@ export default function Map() {
   const [speed, setSpeed] = useState(15); // km/h, user adjustable (slider)
   const geocodedWaypoints = useRef([null, null]); // [fromNodeId, toNodeId] set by search
 
+  const routeCoords = useRef(null); // for .gpx export
+
   const currentRoute = useRef({
     fromId: null,
     toId: null,
@@ -142,6 +144,7 @@ export default function Map() {
         // find route
         const [startId, endId] = waypoints.current;
         const result = findRoute(startId, endId);
+        routeCoords.current = result.geometry.coordinates;
 
         if (result) {
           map.current.getSource("route").setData({
@@ -204,6 +207,7 @@ export default function Map() {
     const [fromId, toId] = geocodedWaypoints.current;
     if (fromId && toId) {
       const result = findRoute(fromId, toId);
+      routeCoords.current = result.geometry.coordinates;
       if (result) {
         map.current
           .getSource("route")
@@ -238,6 +242,7 @@ export default function Map() {
     setError(null);
     setFromText(""); // clear input fields
     setToText("");
+    routeCoords.current = null; // get rid of coords
     map.current
       .getSource("route")
       ?.setData({ type: "FeatureCollection", features: [] });
@@ -290,6 +295,7 @@ export default function Map() {
     const [newFromId, newToId] = geocodedWaypoints.current;
     if (newFromId && newToId) {
       const result = findRoute(newFromId, newToId);
+      routeCoords.current = result.geometry.coordinates;
       if (result) {
         map.current
           .getSource("route")
@@ -351,6 +357,9 @@ export default function Map() {
         onSpeedChange={setSpeed}
         networkVisible={networkVisible}
         onToggleNetwork={toggleNetwork}
+        getRouteCoords={() => routeCoords.current}
+        fromText={fromText}
+        toText={toText}
       />
     </div>
   );

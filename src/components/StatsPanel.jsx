@@ -4,9 +4,42 @@ export default function StatsPanel({
   onSpeedChange,
   onToggleNetwork,
   networkVisible,
+  getRouteCoords,
+  fromText,
+  toText,
 }) {
   const distanceKm = distanceM ? (distanceM / 1000).toFixed(1) : "—";
   const minutes = distanceM ? Math.round((distanceM / 1000 / speed) * 60) : "—";
+
+  function exportGpx() {
+    const coords = getRouteCoords();
+    if (!coords) return;
+
+    const trackpoints = coords
+      .map(([lng, lat]) => `      <trkpt lat="${lat}" lon="${lng}"></trkpt>`)
+      .join("\n");
+
+    const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="pcn-router" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>PCN Route</name>
+    <trkseg>
+${trackpoints}
+    </trkseg>
+  </trk>
+</gpx>`;
+
+    const blob = new Blob([gpx], { type: "application/gpx+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+
+    const from = fromText.trim().replace(/\s+/g, "_") || "start";
+    const to = toText.trim().replace(/\s+/g, "_") || "end";
+    a.download = `${from}_to_${to}.gpx`; // output .gpx file has start and end points in it's filename
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <div
@@ -41,11 +74,34 @@ export default function StatsPanel({
         {networkVisible ? "hide" : "show"} PCN
       </button>
 
-      {/* km and minute display*/}
+      {/* km display */}
       <div>
         <strong>{distanceKm} km</strong>
       </div>
-      <div>{minutes} min</div>
+
+      {/* minutes + gpx button on the same row */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span>{minutes} min</span>
+        <button
+          onClick={exportGpx}
+          style={{
+            position: "absolute",
+            top: 48, // sits just below the show pcn button
+            right: 16,
+            padding: "4px 4px",
+            borderRadius: 6,
+            border: "1px solid #e5e7eb",
+            background: "#f9fafb",
+            fontSize: 16,
+            fontFamily: "inherit",
+            opacity: distanceM ? 1 : 0.5, // greyed out if no route shown
+            cursor: distanceM ? "pointer" : "default",
+          }}
+        >
+          export .gpx
+        </button>
+      </div>
+
       <div style={{ marginTop: 8 }}>
         <label style={{ fontSize: 16, display: "block", marginBottom: 4 }}>
           speed: {speed} km/h
@@ -61,23 +117,6 @@ export default function StatsPanel({
           color="#750000"
         />
       </div>
-      {/* future export .gpx feature
-      <button
-        style={{
-          marginTop: 10,
-          width: "100%",
-          padding: "6px 0",
-          borderRadius: 6,
-          border: "1px solid #e5e7eb",
-          background: "#f9fafb",
-          fontSize: 16,
-          cursor: "pointer",
-        }}
-        onClick={() => console.log("gpx export (wip)")}
-      >
-        download .gpx (wip)
-      </button>
-      */}
     </div>
   );
 }
