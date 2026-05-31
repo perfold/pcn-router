@@ -6,6 +6,18 @@ a client-side bike route planner for Singapore that prioritises the Park Connect
 
 ---
 
+## features
+
+- **search or click**: type an address to geocode a start/end point, or click directly on the map
+- **PCN-prioritised routing**: prefers dedicated cycling infrastructure over shared footways
+- **shareable routes**: copy the url once a route is loaded, recipients see the same route when they open it
+- **gpx export**: download the route as a `.gpx` file for use in cycling apps (e.g. Garmin, Komoot) or on a bike computer
+- **speed-adjusted time estimate**: adjustable speed slider for personalised eta, can be used for runners too
+- **show/hide PCN overlay**: toggle visibility of the dedicated cycling network on the map
+- **mobile-friendly**: responsive layout that works on phones
+
+---
+
 ## how it works
 
 the routing graph is pre-built offline from NParks, LTA and URA datasets (from data.gov.sg) and OpenStreetMap, then committed to the repo. the browser loads the graph on startup and runs A\* entirely client-side, no backend, no server.

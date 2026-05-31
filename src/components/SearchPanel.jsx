@@ -1,5 +1,6 @@
 import { geocode } from "../lib/geocode";
 import { useState } from "react";
+import { useIsMobile } from "../lib/isMobile";
 
 export default function SearchPanel({
   fromText,
@@ -65,7 +66,10 @@ ${trackpoints}
     setTimeout(() => setCopied(false), 1500);
   }
 
+  const isMobile = useIsMobile();
   const hasRoute = !!getRouteCoords();
+  const fs = isMobile ? 10 : 16; // font size
+  const pad = isMobile ? "4px 4px" : "16px 16px"; // panel padding
 
   return (
     <div
@@ -75,12 +79,15 @@ ${trackpoints}
         left: 16,
         background: "white",
         borderRadius: 8,
-        padding: "16px 16px",
+        padding: pad,
         boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
         display: "flex",
         flexDirection: "column",
         gap: 8,
-        minWidth: 220,
+        minWidth: isMobile ? 0 : 220,
+        maxWidth: isMobile ? "calc(50vw - 24px)" : "none", // prevent overlap with stats panel
+        fontSize: fs,
+        font: "inherit",
       }}
     >
       {/* input start point */}
@@ -94,7 +101,15 @@ ${trackpoints}
             value={fromText}
             onChange={(e) => onFromChange(e.target.value)}
             onKeyDown={(e) => handleKeyDown("from", fromText, e)}
-            style={inputStyle}
+            style={{
+              fontSize: fs,
+              padding: pad,
+              width: "100%",
+              boxSizing: "border-box",
+              border: "1px solid #e5e7eb",
+              borderRadius: 6,
+              outline: "none",
+            }}
           />
 
           {/* input end pt */}
@@ -104,15 +119,24 @@ ${trackpoints}
             value={toText}
             onChange={(e) => onToChange(e.target.value)}
             onKeyDown={(e) => handleKeyDown("to", toText, e)}
-            style={inputStyle}
+            style={{
+              fontSize: fs,
+              padding: pad,
+              width: "100%",
+              boxSizing: "border-box",
+              border: "1px solid #e5e7eb",
+              borderRadius: 6,
+              outline: "none",
+            }}
           />
         </div>
+
         {/* flip button on the right */}
-        <button onClick={onFlip} style={flipButtonStyle}>
+        <button onClick={onFlip} style={{ fontSize: fs, alignSelf: "stretch" }}>
           ⇅
         </button>
       </div>
-      <button onClick={onReset} style={actionButtonStyle}>
+      <button onClick={onReset} style={{ fontSize: fs }}>
         clear
       </button>
 
@@ -121,10 +145,11 @@ ${trackpoints}
         <button
           onClick={copyLink}
           style={{
-            ...actionButtonStyle,
             flex: 1,
             opacity: hasRoute ? 1 : 0.4,
             cursor: hasRoute ? "pointer" : "default",
+            fontSize: isMobile ? 8 : 16,
+            padding: pad,
           }}
         >
           {copied ? "copied!" : "copy link"}
@@ -132,10 +157,11 @@ ${trackpoints}
         <button
           onClick={exportGpx}
           style={{
-            ...actionButtonStyle,
             flex: 1,
             opacity: hasRoute ? 1 : 0.4,
             cursor: hasRoute ? "pointer" : "default",
+            fontSize: isMobile ? 8 : 16,
+            padding: pad,
           }}
         >
           export .gpx
@@ -144,33 +170,3 @@ ${trackpoints}
     </div>
   );
 }
-
-const inputStyle = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 6,
-  padding: "8px 10px",
-  fontSize: 16,
-  outline: "none",
-  fontFamily: "inherit",
-};
-
-const actionButtonStyle = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 6,
-  padding: "8px 0",
-  fontSize: 16,
-  cursor: "pointer",
-  background: "#f9fafb",
-  fontFamily: "inherit",
-};
-
-const flipButtonStyle = {
-  border: "1px solid #e5e7eb",
-  borderRadius: 6,
-  padding: "0 8px",
-  fontSize: 16,
-  cursor: "pointer",
-  background: "#f9fafb",
-  fontFamily: "inherit",
-  alignSelf: "stretch",
-};

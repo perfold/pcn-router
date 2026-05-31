@@ -3,6 +3,7 @@ import { Map as MaplibreMap, NavigationControl, Marker } from "maplibre-gl";
 import { loadGraph, snapToNode, findRoute } from "../lib/graph";
 import StatsPanel from "./StatsPanel";
 import SearchPanel from "./SearchPanel";
+import { useIsMobile } from "../lib/isMobile";
 
 const SINGAPORE = { lng: 103.8198, lat: 1.3521 }; // map centres here on load
 const ZOOM = 11;
@@ -42,6 +43,8 @@ export default function Map() {
 
   const routeCoords = useRef(null); // for .gpx export
 
+  const isMobile = useIsMobile(); // for mobile layouts
+
   const currentRoute = useRef({
     fromId: null,
     toId: null,
@@ -72,7 +75,7 @@ export default function Map() {
         [maxLng, maxLat],
       ],
       {
-        padding: { top: 80, bottom: 80, left: 280, right: 260 }, // left: search panel, right: stats panel
+        padding: { top: 80, bottom: 80, left: 280, right: 260 },
         duration: 1000,
       },
     );
@@ -434,14 +437,14 @@ export default function Map() {
         <div
           style={{
             position: "absolute",
-            top: 16,
             left: "50%",
-            transform: "translateX(-50%)",
+            top: isMobile ? "50%" : 16,
+            transform: isMobile ? "translate(-50%, -50%)" : "translateX(-50%)",
             background: "#f9fafb",
             border: "1px solid #e5e7eb",
             borderRadius: 8,
             padding: "8px 12px",
-            fontSize: 16,
+            fontSize: isMobile ? 10 : 16,
             whiteSpace: "nowrap",
             pointerEvents: "none",
           }}
@@ -455,15 +458,15 @@ export default function Map() {
         <div
           style={{
             position: "absolute",
-            top: 16,
             left: "50%",
-            transform: "translateX(-50%)",
+            top: isMobile ? "50%" : 16,
+            transform: isMobile ? "translate(-50%, -50%)" : "translateX(-50%)",
             background: "#fef2f2",
             border: "1px solid #fecaca",
             color: "#D30000",
             borderRadius: 8,
             padding: "8px 12px",
-            fontSize: 16,
+            fontSize: isMobile ? 10 : 16,
             whiteSpace: "nowrap",
             pointerEvents: "none",
           }}
