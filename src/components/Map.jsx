@@ -32,6 +32,7 @@ export default function Map() {
   const waypoints = useRef([]); // [start node, end node]
   const markers = useRef({ start: null, end: null });
   const [networkVisible, setNetworkVisible] = useState(false); // pcn network layer visibility toggle
+  const [loading, setLoading] = useState(true); // used for loading message
 
   const [error, setError] = useState(null);
 
@@ -128,6 +129,7 @@ export default function Map() {
 
       await loadGraph(geojson);
       graphReady.current = true;
+      setLoading(false);
 
       // read url params and auto-route on load
       const params = new URLSearchParams(window.location.search);
@@ -424,6 +426,27 @@ export default function Map() {
         getRouteCoords={() => routeCoords.current}
       />
 
+      {/* loading message */}
+      {loading && (
+        <div
+          style={{
+            position: "absolute",
+            top: 16,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "#f9fafb",
+            border: "1px solid #e5e7eb",
+            borderRadius: 8,
+            padding: "8px 12px",
+            fontSize: 16,
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
+          }}
+        >
+          loading map...
+        </div>
+      )}
+
       {/* error message at the top middle of the screen */}
       {error && (
         <div
@@ -434,7 +457,7 @@ export default function Map() {
             transform: "translateX(-50%)",
             background: "#fef2f2",
             border: "1px solid #fecaca",
-            color: "#dc2626",
+            color: "#D30000",
             borderRadius: 8,
             padding: "8px 12px",
             fontSize: 16,
