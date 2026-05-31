@@ -71,7 +71,10 @@ export default function Map() {
         [minLng, minLat],
         [maxLng, maxLat],
       ],
-      { padding: 80, duration: 1000 },
+      {
+        padding: { top: 80, bottom: 80, left: 280, right: 260 }, // left: search panel, right: stats panel
+        duration: 1000,
+      },
     );
   }
 
