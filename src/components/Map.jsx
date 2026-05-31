@@ -66,7 +66,7 @@ export default function Map() {
 
     // wait for base map to finish loading before adding layers
     map.current.on("load", async () => {
-      const res = await fetch("/data/graph.geojson");
+      const res = await fetch(`${import.meta.env.BASE_URL}data/graph.geojson`);
       const geojson = await res.json();
 
       map.current.addSource("graph", {

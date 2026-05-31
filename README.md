@@ -2,7 +2,7 @@
 
 a client-side bike route planner for Singapore that prioritises the Park Connector Network (PCN). type an address or click the map to set a start and end point. the router finds the most cycling-friendly path, preferring dedicated PCN and cycling infrastructure over shared footways.
 
-## live at: [https://Sherwin-Leow.github.io/pcn-router]
+## live at: [https://perfold.github.io/pcn-router]
 
 ## how it works
 
