@@ -16,7 +16,6 @@ export default function Map() {
   const [networkVisible, setNetworkVisible] = useState(false); // pcn network layer visibility toggle
 
   const [error, setError] = useState(null);
-  const [resetKey, setResetKey] = useState(0);
 
   const [distanceM, setDistanceM] = useState(null); // dist in metres, used to calc time
   const [speed, setSpeed] = useState(15); // km/h, user adjustable (slider)
@@ -165,6 +164,13 @@ export default function Map() {
     });
   }, []);
 
+  // handle error message
+  useEffect(() => {
+    if (!error) return;
+    const t = setTimeout(() => setError(null), 2500); // error lasts 2.5s
+    return () => clearTimeout(t);
+  }, [error]);
+
   function handleGeocode(field, lat, lng) {
     setError(null);
     if (!graphReady.current) return;
@@ -230,10 +236,15 @@ export default function Map() {
     geocodedWaypoints.current = [null, null];
     setDistanceM(null);
     setError(null);
+    setFromText(""); // clear input fields
+    setToText("");
     map.current
       .getSource("route")
       ?.setData({ type: "FeatureCollection", features: [] });
-    setResetKey((k) => k + 1); // clear search panel text fields
+    map.current.flyTo({
+      center: [SINGAPORE.lng, SINGAPORE.lat],
+      zoom: ZOOM,
+    }); // zoom back to default
   }
 
   // swap the start and end pts
@@ -302,7 +313,6 @@ export default function Map() {
       <div ref={container} style={{ width: "100%", height: "100%" }} />
 
       <SearchPanel
-        key={resetKey}
         onGeocode={handleGeocode}
         onError={setError}
         onReset={reset}
@@ -313,20 +323,22 @@ export default function Map() {
         onToChange={setToText}
       />
 
-      {/* error message shown below search panel */}
+      {/* error message at the top middle of the screen */}
       {error && (
         <div
           style={{
             position: "absolute",
-            top: 110,
-            left: 16,
+            top: 16,
+            left: "50%",
+            transform: "translateX(-50%)",
             background: "#fef2f2",
             border: "1px solid #fecaca",
             color: "#dc2626",
             borderRadius: 8,
             padding: "8px 12px",
-            fontSize: 13,
-            maxWidth: 220,
+            fontSize: 16,
+            whiteSpace: "nowrap",
+            pointerEvents: "none",
           }}
         >
           {error}

@@ -16,11 +16,11 @@ export default function StatsPanel({
         right: 16,
         background: "white",
         borderRadius: 8,
-        padding: "12px 16px",
+        padding: "16px 16px",
         boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-        fontSize: 14,
+        fontSize: 16,
         lineHeight: 1.8,
-        minWidth: 180,
+        minWidth: 220,
       }}
     >
       {/* show/hide PCN button */}
@@ -29,11 +29,11 @@ export default function StatsPanel({
           position: "absolute", // positions relative to the panel
           top: 16,
           right: 16,
-          padding: "2px 8px",
+          padding: "4px 4px",
           borderRadius: 6,
           border: "1px solid #e5e7eb",
           background: "#f9fafb",
-          fontSize: 11,
+          fontSize: 16,
           cursor: "pointer",
         }}
         onClick={onToggleNetwork}
@@ -47,7 +47,7 @@ export default function StatsPanel({
       </div>
       <div>{minutes} min</div>
       <div style={{ marginTop: 8 }}>
-        <label style={{ fontSize: 12, display: "block", marginBottom: 4 }}>
+        <label style={{ fontSize: 16, display: "block", marginBottom: 4 }}>
           speed: {speed} km/h
         </label>
         {/* speed slider */}
@@ -70,7 +70,7 @@ export default function StatsPanel({
           borderRadius: 6,
           border: "1px solid #e5e7eb",
           background: "#f9fafb",
-          fontSize: 13,
+          fontSize: 16,
           cursor: "pointer",
         }}
         onClick={() => console.log("gpx export (wip)")}

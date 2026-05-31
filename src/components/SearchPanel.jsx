@@ -35,7 +35,7 @@ export default function SearchPanel({
         left: 16,
         background: "white",
         borderRadius: 8,
-        padding: "12px 16px",
+        padding: "16px 16px",
         boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
         display: "flex",
         flexDirection: "column",
@@ -44,27 +44,34 @@ export default function SearchPanel({
       }}
     >
       {/* input start point */}
-      <input
-        type="text"
-        placeholder="start"
-        value={fromText}
-        onChange={(e) => onFromChange(e.target.value)}
-        onKeyDown={(e) => handleKeyDown("from", fromText, e)}
-        style={inputStyle}
-      />
-      {/* flip button */}
-      <button onClick={onFlip} style={flipButtonStyle}>
-        ⇅
-      </button>
-      {/* input end pt */}
-      <input
-        type="text"
-        placeholder="end"
-        value={toText}
-        onChange={(e) => onToChange(e.target.value)}
-        onKeyDown={(e) => handleKeyDown("to", toText, e)}
-        style={inputStyle}
-      />
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div
+          style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1 }}
+        >
+          <input
+            type="text"
+            placeholder="start"
+            value={fromText}
+            onChange={(e) => onFromChange(e.target.value)}
+            onKeyDown={(e) => handleKeyDown("from", fromText, e)}
+            style={inputStyle}
+          />
+
+          {/* input end pt */}
+          <input
+            type="text"
+            placeholder="end"
+            value={toText}
+            onChange={(e) => onToChange(e.target.value)}
+            onKeyDown={(e) => handleKeyDown("to", toText, e)}
+            style={inputStyle}
+          />
+        </div>
+        {/* flip button on the right */}
+        <button onClick={onFlip} style={flipButtonStyle}>
+          ⇅
+        </button>
+      </div>
       <button onClick={onReset} style={resetButtonStyle}>
         clear
       </button>
@@ -76,7 +83,7 @@ const inputStyle = {
   border: "1px solid #e5e7eb",
   borderRadius: 6,
   padding: "8px 10px",
-  fontSize: 14,
+  fontSize: 16,
   outline: "none",
   fontFamily: "inherit",
 };
@@ -84,8 +91,8 @@ const inputStyle = {
 const resetButtonStyle = {
   border: "1px solid #e5e7eb",
   borderRadius: 6,
-  padding: "6px 0",
-  fontSize: 13,
+  padding: "8px 0",
+  fontSize: 16,
   cursor: "pointer",
   background: "#f9fafb",
   fontFamily: "inherit",
@@ -94,9 +101,10 @@ const resetButtonStyle = {
 const flipButtonStyle = {
   border: "1px solid #e5e7eb",
   borderRadius: 6,
-  padding: "4px 0",
+  padding: "0 8px",
   fontSize: 16,
   cursor: "pointer",
   background: "#f9fafb",
   fontFamily: "inherit",
+  alignSelf: "stretch",
 };
