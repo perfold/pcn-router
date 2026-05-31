@@ -7,6 +7,24 @@ import SearchPanel from "./SearchPanel";
 const SINGAPORE = { lng: 103.8198, lat: 1.3521 }; // map centres here on load
 const ZOOM = 11;
 
+// encode lat/lng into url params for sharing
+function updateUrl(fromLngLat, toLngLat, fromName, toName) {
+  const params = new URLSearchParams();
+  if (fromName) params.set("fromName", fromName);
+  if (toName) params.set("toName", toName);
+  if (fromLngLat) params.set("from", `${fromLngLat[1]},${fromLngLat[0]}`);
+  if (toLngLat) params.set("to", `${toLngLat[1]},${toLngLat[0]}`);
+  history.replaceState(null, "", `?${params.toString()}`);
+}
+
+function clearUrl() {
+  history.replaceState(null, "", window.location.pathname);
+}
+
+function fmtCoord(lat, lng) {
+  return `${lat.toFixed(4)},${lng.toFixed(4)}`; // display text for click-placed coords
+}
+
 export default function Map() {
   const container = useRef(null);
   const map = useRef(null);
@@ -28,7 +46,10 @@ export default function Map() {
     toId: null,
     fromLngLat: null,
     toLngLat: null,
+    fromName: null, // name from search input, null if click-placed
+    toName: null,
   }); // used for flip
+
   const [fromText, setFromText] = useState("");
   const [toText, setToText] = useState("");
 
@@ -107,6 +128,50 @@ export default function Map() {
 
       await loadGraph(geojson);
       graphReady.current = true;
+
+      // read url params and auto-route on load
+      const params = new URLSearchParams(window.location.search);
+      const fromParam = params.get("from");
+      const toParam = params.get("to");
+      const fromNameUrl = params.get("fromName");
+      const toNameUrl = params.get("toName");
+      if (fromParam && toParam) {
+        const [fLat, fLng] = fromParam.split(",").map(Number);
+        const [tLat, tLng] = toParam.split(",").map(Number);
+        if (!isNaN(fLat) && !isNaN(fLng) && !isNaN(tLat) && !isNaN(tLng)) {
+          // place start marker
+          const fromNodeId = snapToNode(fLat, fLng);
+          const toNodeId = snapToNode(tLat, tLng);
+          if (fromNodeId && toNodeId) {
+            markers.current.start = new Marker({ color: "#008000" })
+              .setLngLat([fLng, fLat])
+              .addTo(map.current);
+            markers.current.end = new Marker({ color: "#D30000" })
+              .setLngLat([tLng, tLat])
+              .addTo(map.current);
+            geocodedWaypoints.current = [fromNodeId, toNodeId];
+            currentRoute.current = {
+              fromId: fromNodeId,
+              toId: toNodeId,
+              fromLngLat: [fLng, fLat],
+              toLngLat: [tLng, tLat],
+              fromName: fromNameUrl,
+              toName: toNameUrl,
+            };
+            setFromText(fromNameUrl || fmtCoord(fLat, fLng));
+            setToText(toNameUrl || fmtCoord(tLat, tLng));
+            const result = findRoute(fromNodeId, toNodeId);
+            if (result) {
+              map.current
+                .getSource("route")
+                .setData({ type: "Feature", geometry: result.geometry });
+              setDistanceM(result.distanceM);
+              routeCoords.current = result.geometry.coordinates;
+              fitToRoute(result.geometry.coordinates);
+            }
+          }
+        }
+      }
     });
 
     // handle clicks
@@ -130,6 +195,16 @@ export default function Map() {
           .setLngLat([lng, lat])
           .addTo(map.current);
         setDistanceM(null);
+        setFromText(fmtCoord(lat, lng));
+        setToText("");
+        currentRoute.current = {
+          fromId: nodeId,
+          toId: null,
+          fromLngLat: [lng, lat],
+          toLngLat: null,
+          fromName: null, // click-placed, no name
+          toName: null,
+        }; // reset and store fromLngLat
         map.current
           .getSource("route")
           .setData({ type: "FeatureCollection", features: [] });
@@ -140,13 +215,14 @@ export default function Map() {
         markers.current.end = new Marker({ color: "#D30000" })
           .setLngLat([lng, lat])
           .addTo(map.current);
+        setToText(fmtCoord(lat, lng));
 
         // find route
         const [startId, endId] = waypoints.current;
         const result = findRoute(startId, endId);
-        routeCoords.current = result.geometry.coordinates;
 
         if (result) {
+          routeCoords.current = result.geometry.coordinates;
           map.current.getSource("route").setData({
             // push route to GUI
             type: "Feature",
@@ -156,9 +232,8 @@ export default function Map() {
 
           currentRoute.current.toId = endId;
           currentRoute.current.toLngLat = [lng, lat];
-
-          // zoom out to show the entire extent of the route
-          fitToRoute(result.geometry.coordinates);
+          updateUrl(currentRoute.current.fromLngLat, [lng, lat]); // write coords to url, no names for click-placed
+          fitToRoute(result.geometry.coordinates); // zoom out to show the entire extent of the route
         } else {
           setError("no route found");
         }
@@ -174,7 +249,7 @@ export default function Map() {
     return () => clearTimeout(t);
   }, [error]);
 
-  function handleGeocode(field, lat, lng) {
+  function handleGeocode(field, lat, lng, name) {
     setError(null);
     if (!graphReady.current) return;
 
@@ -189,6 +264,7 @@ export default function Map() {
       geocodedWaypoints.current[0] = nodeId;
       currentRoute.current.fromId = nodeId; // store node for flip
       currentRoute.current.fromLngLat = [lng, lat];
+      currentRoute.current.fromName = name; // store search name
       map.current.flyTo({ center: [lng, lat], zoom: 14 }); // move to start pt
     } else {
       if (markers.current.end) markers.current.end.remove();
@@ -198,6 +274,7 @@ export default function Map() {
       geocodedWaypoints.current[1] = nodeId;
       currentRoute.current.toId = nodeId; // store for flip
       currentRoute.current.toLngLat = [lng, lat];
+      currentRoute.current.toName = name; // store search name
       if (!geocodedWaypoints.current[0])
         // only fly if 'from' isn't set yet
         map.current.flyTo({ center: [lng, lat], zoom: 14 });
@@ -207,12 +284,18 @@ export default function Map() {
     const [fromId, toId] = geocodedWaypoints.current;
     if (fromId && toId) {
       const result = findRoute(fromId, toId);
-      routeCoords.current = result.geometry.coordinates;
       if (result) {
+        routeCoords.current = result.geometry.coordinates;
         map.current
           .getSource("route")
           .setData({ type: "Feature", geometry: result.geometry });
         setDistanceM(result.distanceM);
+        updateUrl(
+          currentRoute.current.fromLngLat,
+          currentRoute.current.toLngLat,
+          currentRoute.current.fromName,
+          currentRoute.current.toName,
+        ); // update url
         fitToRoute(result.geometry.coordinates);
       } else {
         setError("no route found");
@@ -243,6 +326,7 @@ export default function Map() {
     setFromText(""); // clear input fields
     setToText("");
     routeCoords.current = null; // get rid of coords
+    clearUrl();
     map.current
       .getSource("route")
       ?.setData({ type: "FeatureCollection", features: [] });
@@ -254,14 +338,17 @@ export default function Map() {
 
   // swap the start and end pts
   function flip() {
-    const { fromId, toId, fromLngLat, toLngLat } = currentRoute.current;
+    const { fromId, toId, fromLngLat, toLngLat, fromName, toName } =
+      currentRoute.current;
 
-    // swap stored state
+    // swap stored state including names
     currentRoute.current = {
       fromId: toId,
       toId: fromId,
       fromLngLat: toLngLat,
       toLngLat: fromLngLat,
+      fromName: toName,
+      toName: fromName,
     };
     geocodedWaypoints.current = [toId ?? null, fromId ?? null];
 
@@ -295,12 +382,18 @@ export default function Map() {
     const [newFromId, newToId] = geocodedWaypoints.current;
     if (newFromId && newToId) {
       const result = findRoute(newFromId, newToId);
-      routeCoords.current = result.geometry.coordinates;
       if (result) {
+        routeCoords.current = result.geometry.coordinates;
         map.current
           .getSource("route")
           .setData({ type: "Feature", geometry: result.geometry });
         setDistanceM(result.distanceM);
+        updateUrl(
+          currentRoute.current.fromLngLat,
+          currentRoute.current.toLngLat,
+          currentRoute.current.fromName,
+          currentRoute.current.toName,
+        ); // update url after flip
         fitToRoute(result.geometry.coordinates);
       } else {
         setError("no route found");
@@ -311,6 +404,7 @@ export default function Map() {
         .getSource("route")
         ?.setData({ type: "FeatureCollection", features: [] });
       setDistanceM(null);
+      clearUrl();
     }
   }
 
@@ -327,6 +421,7 @@ export default function Map() {
         toText={toText}
         onFromChange={setFromText}
         onToChange={setToText}
+        getRouteCoords={() => routeCoords.current}
       />
 
       {/* error message at the top middle of the screen */}
@@ -357,9 +452,6 @@ export default function Map() {
         onSpeedChange={setSpeed}
         networkVisible={networkVisible}
         onToggleNetwork={toggleNetwork}
-        getRouteCoords={() => routeCoords.current}
-        fromText={fromText}
-        toText={toText}
       />
     </div>
   );

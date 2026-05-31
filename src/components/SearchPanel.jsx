@@ -1,4 +1,5 @@
 import { geocode } from "../lib/geocode";
+import { useState } from "react";
 
 export default function SearchPanel({
   fromText,
@@ -9,7 +10,10 @@ export default function SearchPanel({
   onError,
   onReset,
   onFlip,
+  getRouteCoords,
 }) {
+  const [copied, setCopied] = useState(false);
+
   async function handleSubmit(field, query) {
     if (!query.trim()) return;
 
@@ -20,12 +24,48 @@ export default function SearchPanel({
       return;
     }
 
-    onGeocode(field, result.lat, result.lng);
+    onGeocode(field, result.lat, result.lng, query);
   }
 
   function handleKeyDown(field, query, e) {
     if (e.key === "Enter") handleSubmit(field, query);
   }
+
+  // export gpx function
+  function exportGpx() {
+    const coords = getRouteCoords();
+    if (!coords) return;
+    const trackpoints = coords
+      .map(([lng, lat]) => `      <trkpt lat="${lat}" lon="${lng}"></trkpt>`)
+      .join("\n");
+    const gpx = `<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="pcn-router" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>PCN Route</name>
+    <trkseg>
+${trackpoints}
+    </trkseg>
+  </trk>
+</gpx>`;
+    const blob = new Blob([gpx], { type: "application/gpx+xml" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    const from = fromText.trim().replace(/\s+/g, "_") || "start";
+    const to = toText.trim().replace(/\s+/g, "_") || "end";
+    a.download = `${from}_to_${to}.gpx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // copy link for this route
+  function copyLink() {
+    navigator.clipboard.writeText(window.location.href);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  }
+
+  const hasRoute = !!getRouteCoords();
 
   return (
     <div
@@ -72,9 +112,35 @@ export default function SearchPanel({
           ⇅
         </button>
       </div>
-      <button onClick={onReset} style={resetButtonStyle}>
+      <button onClick={onReset} style={actionButtonStyle}>
         clear
       </button>
+
+      {/* copy link + export gpx button side by side */}
+      <div style={{ display: "flex", gap: 8 }}>
+        <button
+          onClick={copyLink}
+          style={{
+            ...actionButtonStyle,
+            flex: 1,
+            opacity: hasRoute ? 1 : 0.4,
+            cursor: hasRoute ? "pointer" : "default",
+          }}
+        >
+          {copied ? "copied!" : "copy link"}
+        </button>
+        <button
+          onClick={exportGpx}
+          style={{
+            ...actionButtonStyle,
+            flex: 1,
+            opacity: hasRoute ? 1 : 0.4,
+            cursor: hasRoute ? "pointer" : "default",
+          }}
+        >
+          export .gpx
+        </button>
+      </div>
     </div>
   );
 }
@@ -88,7 +154,7 @@ const inputStyle = {
   fontFamily: "inherit",
 };
 
-const resetButtonStyle = {
+const actionButtonStyle = {
   border: "1px solid #e5e7eb",
   borderRadius: 6,
   padding: "8px 0",
