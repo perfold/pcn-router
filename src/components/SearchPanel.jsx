@@ -1,21 +1,29 @@
 import { geocode } from "../lib/geocode";
 import { useState } from "react";
 import { useIsMobile } from "../lib/isMobile";
+import { useStore } from "../store";
+import WaypointList from "./WaypointList";
 
 export default function SearchPanel({
-  fromText,
-  toText,
-  onFromChange,
-  onToChange,
   onGeocode,
   onError,
   onReset,
   onFlip,
-  getRouteCoords,
+  onRemoveWaypoint,
+  onReorder,
 }) {
+  const [query, setQuery] = useState(""); // single search input
   const [copied, setCopied] = useState(false);
+  const routeCoords = useStore((s) => s.routeCoords);
+  const waypoints = useStore((s) => s.waypoints);
+  const [listOpen, setListOpen] = useState(true);
 
-  async function handleSubmit(field, query) {
+  const isMobile = useIsMobile();
+  const hasRoute = !!routeCoords;
+  const fs = isMobile ? 10 : 16; // font size
+  const pad = isMobile ? "4px 4px" : "16px 16px"; // panel padding
+
+  async function handleSubmit() {
     if (!query.trim()) return;
 
     const result = await geocode(query);
@@ -25,22 +33,21 @@ export default function SearchPanel({
       return;
     }
 
-    onGeocode(field, result.lat, result.lng, query);
+    onGeocode(result.lat, result.lng, query);
+    setQuery(""); // clear input after adding
   }
 
-  function handleKeyDown(field, query, e) {
+  function handleKeyDown(e) {
     if (e.key === "Enter") {
-      e.preventDefault(); // prevents the "move to next field" behaviour
-      if (field === "to") e.target.blur(); // if done typing end point, hide keyboard
-      handleSubmit(field, query);
+      e.preventDefault(); // prevents the "move to next field" behaviour on phone keyboard
+      handleSubmit();
     }
   }
 
   // export gpx function
   function exportGpx() {
-    const coords = getRouteCoords();
-    if (!coords) return;
-    const trackpoints = coords
+    if (!routeCoords) return;
+    const trackpoints = routeCoords
       .map(([lng, lat]) => `      <trkpt lat="${lat}" lon="${lng}"></trkpt>`)
       .join("\n");
     const gpx = `<?xml version="1.0" encoding="UTF-8"?>
@@ -56,8 +63,12 @@ ${trackpoints}
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    const from = fromText.trim().replace(/\s+/g, "_") || "start";
-    const to = toText.trim().replace(/\s+/g, "_") || "end";
+    // use first and last waypoint labels for filename
+    const from = (waypoints[0]?.label || "start").replace(/\s+/g, "_");
+    const to = (waypoints[waypoints.length - 1]?.label || "end").replace(
+      /\s+/g,
+      "_",
+    );
     a.download = `${from}_to_${to}.gpx`;
     a.click();
     URL.revokeObjectURL(url);
@@ -69,11 +80,6 @@ ${trackpoints}
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   }
-
-  const isMobile = useIsMobile();
-  const hasRoute = !!getRouteCoords();
-  const fs = isMobile ? 10 : 16; // font size
-  const pad = isMobile ? "4px 4px" : "16px 16px"; // panel padding
 
   return (
     <div
@@ -94,54 +100,32 @@ ${trackpoints}
         font: "inherit",
       }}
     >
-      {/* input start point */}
+      {/* single search input + flip button */}
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-        <div
-          style={{ display: "flex", flexDirection: "column", gap: 8, flex: 1 }}
-        >
-          <input
-            type="text"
-            placeholder="start"
-            value={fromText}
-            onChange={(e) => onFromChange(e.target.value)}
-            onKeyDown={(e) => handleKeyDown("from", fromText, e)}
-            enterKeyHint="search"
-            style={{
-              fontSize: fs,
-              padding: pad,
-              width: "100%",
-              boxSizing: "border-box",
-              border: "1px solid #e5e7eb",
-              borderRadius: 6,
-              outline: "none",
-            }}
-          />
-
-          {/* input end pt */}
-          <input
-            type="text"
-            placeholder="end"
-            value={toText}
-            onChange={(e) => onToChange(e.target.value)}
-            onKeyDown={(e) => handleKeyDown("to", toText, e)}
-            enterKeyHint="search"
-            style={{
-              fontSize: fs,
-              padding: pad,
-              width: "100%",
-              boxSizing: "border-box",
-              border: "1px solid #e5e7eb",
-              borderRadius: 6,
-              outline: "none",
-            }}
-          />
-        </div>
+        <input
+          type="text"
+          placeholder="search"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={handleKeyDown}
+          enterKeyHint="search"
+          style={{
+            fontSize: fs,
+            padding: pad,
+            flex: 1,
+            boxSizing: "border-box",
+            border: "1px solid #e5e7eb",
+            borderRadius: 6,
+            outline: "none",
+          }}
+        />
 
         {/* flip button on the right */}
         <button onClick={onFlip} style={{ fontSize: fs, alignSelf: "stretch" }}>
           ⇅
         </button>
       </div>
+
       <button onClick={onReset} style={{ fontSize: fs }}>
         clear
       </button>
@@ -173,6 +157,35 @@ ${trackpoints}
           export .gpx
         </button>
       </div>
+
+      {/* collapsible waypoint list with drag to reorder*/}
+      {waypoints.length > 0 && (
+        <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: 4 }}>
+          {listOpen && (
+            <WaypointList
+              waypoints={waypoints}
+              onReorder={onReorder}
+              onRemove={onRemoveWaypoint}
+            />
+          )}
+          <button
+            onClick={() => setListOpen((v) => !v)}
+            style={{
+              width: "100%",
+              background: "none",
+              border: "none",
+              cursor: "pointer",
+              fontSize: fs,
+              color: "#6b7280",
+              padding: "2px 0",
+            }}
+          >
+            {listOpen
+              ? "▲"
+              : `▼ ${waypoints.length} stop${waypoints.length > 1 ? "s" : ""}`}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

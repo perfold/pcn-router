@@ -1,14 +1,17 @@
 import { useIsMobile } from "../lib/isMobile";
+import { useStore } from "../store";
 
 export default function StatsPanel({
-  distanceM,
   speed,
   onSpeedChange,
   onToggleNetwork,
   networkVisible,
 }) {
-  const distanceKm = distanceM ? (distanceM / 1000).toFixed(1) : "—";
-  const minutes = distanceM ? Math.round((distanceM / 1000 / speed) * 60) : "—";
+  const totalDistanceM = useStore((s) => s.totalDistanceM);
+  const distanceKm = totalDistanceM ? (totalDistanceM / 1000).toFixed(1) : "—";
+  const minutes = totalDistanceM
+    ? Math.round((totalDistanceM / 1000 / speed) * 60)
+    : "—";
   const isMobile = useIsMobile();
   const fs = isMobile ? 10 : 16; // font size
   const pad = isMobile ? "4px 4px" : "16px 16px"; // panel padding

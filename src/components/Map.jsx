@@ -4,22 +4,23 @@ import { loadGraph, snapToNode, findRoute } from "../lib/graph";
 import StatsPanel from "./StatsPanel";
 import SearchPanel from "./SearchPanel";
 import { useIsMobile } from "../lib/isMobile";
+import { useStore } from "../store";
 
 const SINGAPORE = { lng: 103.8198, lat: 1.3521 }; // map centres here on load
 const ZOOM = 11;
 
-// encode lat/lng into url params for sharing
-function updateUrl(fromLngLat, toLngLat, fromName, toName) {
-  const params = new URLSearchParams();
-  if (fromName) params.set("fromName", fromName);
-  if (toName) params.set("toName", toName);
-  if (fromLngLat) params.set("from", `${fromLngLat[1]},${fromLngLat[0]}`);
-  if (toLngLat) params.set("to", `${toLngLat[1]},${toLngLat[0]}`);
-  history.replaceState(null, "", `?${params.toString()}`);
-}
-
 function clearUrl() {
   history.replaceState(null, "", window.location.pathname);
+}
+
+// encode all waypoints into url params for sharing
+function updateUrl(waypoints) {
+  const params = new URLSearchParams();
+  waypoints.forEach((wp) => {
+    const [lng, lat] = wp.lngLat;
+    params.append("wp", `${lat},${lng},${encodeURIComponent(wp.label)}`);
+  });
+  history.replaceState(null, "", `?${params.toString()}`);
 }
 
 function fmtCoord(lat, lng) {
@@ -30,32 +31,22 @@ export default function Map() {
   const container = useRef(null);
   const map = useRef(null);
   const graphReady = useRef(false); // true once graph.geojson is loaded
-  const waypoints = useRef([]); // [start node, end node]
-  const markers = useRef({ start: null, end: null });
+  const markers = useRef([]); // [{ id, marker }], parallel to storedWaypoints
   const [networkVisible, setNetworkVisible] = useState(false); // pcn network layer visibility toggle
   const [loading, setLoading] = useState(true); // used for loading message
-
   const [error, setError] = useState(null);
-
-  const [distanceM, setDistanceM] = useState(null); // dist in metres, used to calc time
   const [speed, setSpeed] = useState(15); // km/h, user adjustable (slider)
-  const geocodedWaypoints = useRef([null, null]); // [fromNodeId, toNodeId] set by search
 
-  const routeCoords = useRef(null); // for .gpx export
+  const {
+    setTotalDistanceM,
+    setRouteCoords,
+    addWaypoint,
+    setWaypoints,
+    removeWaypoint,
+    waypoints: storedWaypoints,
+  } = useStore();
 
   const isMobile = useIsMobile(); // for mobile layouts
-
-  const currentRoute = useRef({
-    fromId: null,
-    toId: null,
-    fromLngLat: null,
-    toLngLat: null,
-    fromName: null, // name from search input, null if click-placed
-    toName: null,
-  }); // used for flip
-
-  const [fromText, setFromText] = useState("");
-  const [toText, setToText] = useState("");
 
   // zooms map to fit a route's coordinate array
   function fitToRoute(coords) {
@@ -75,11 +66,72 @@ export default function Map() {
         [maxLng, maxLat],
       ],
       {
-        padding: { top: 80, bottom: 80, left: 280, right: 260 },
+        padding: isMobile
+          ? { top: 40, bottom: 40, left: 40, right: 40 } // smaller padding on mobile
+          : { top: 80, bottom: 80, left: 280, right: 260 },
         duration: 1000,
       },
     );
   }
+
+  // recompute all segments whenever storedWaypoints changes
+  useEffect(() => {
+    if (!graphReady.current) return;
+
+    if (storedWaypoints.length < 2) {
+      // not enough points, clear route
+      map.current
+        ?.getSource("route")
+        ?.setData({ type: "FeatureCollection", features: [] });
+      setTotalDistanceM(null);
+      setRouteCoords(null);
+    } else {
+      // compute each segment and concat coords
+      let totalDist = 0;
+      const allCoords = [];
+
+      for (let i = 0; i < storedWaypoints.length - 1; i++) {
+        const from = storedWaypoints[i];
+        const to = storedWaypoints[i + 1];
+        const result = findRoute(from.nodeId, to.nodeId);
+        if (result) {
+          totalDist += result.distanceM;
+          allCoords.push(...result.geometry.coordinates);
+        }
+      }
+
+      map.current.getSource("route").setData({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: allCoords },
+      });
+      setTotalDistanceM(totalDist);
+      setRouteCoords(allCoords);
+      if (allCoords.length) fitToRoute(allCoords);
+    }
+
+    // sync marker colors: first=green, last=red, middle=gray
+    markers.current.forEach(({ id, marker }, i) => {
+      const color =
+        i === 0
+          ? "#008000"
+          : i === markers.current.length - 1
+            ? "#D30000"
+            : "#9ca3af";
+      const lngLat = marker.getLngLat();
+      marker.remove(); // maplibre markers don't support color updates, recreate
+      const newMarker = new Marker({ color })
+        .setLngLat(lngLat)
+        .addTo(map.current);
+      markers.current[i] = { id, marker: newMarker };
+    });
+
+    // update url to reflect current waypoints
+    if (storedWaypoints.length > 0) {
+      updateUrl(storedWaypoints);
+    } else {
+      clearUrl();
+    }
+  }, [storedWaypoints]);
 
   useEffect(() => {
     if (map.current) return; // prevent reinitialising on re-render
@@ -139,114 +191,49 @@ export default function Map() {
 
       // read url params and auto-route on load
       const params = new URLSearchParams(window.location.search);
-      const fromParam = params.get("from");
-      const toParam = params.get("to");
-      const fromNameUrl = params.get("fromName");
-      const toNameUrl = params.get("toName");
-      if (fromParam && toParam) {
-        const [fLat, fLng] = fromParam.split(",").map(Number);
-        const [tLat, tLng] = toParam.split(",").map(Number);
-        if (!isNaN(fLat) && !isNaN(fLng) && !isNaN(tLat) && !isNaN(tLng)) {
-          // place start marker
-          const fromNodeId = snapToNode(fLat, fLng);
-          const toNodeId = snapToNode(tLat, tLng);
-          if (fromNodeId && toNodeId) {
-            markers.current.start = new Marker({ color: "#008000" })
-              .setLngLat([fLng, fLat])
-              .addTo(map.current);
-            markers.current.end = new Marker({ color: "#D30000" })
-              .setLngLat([tLng, tLat])
-              .addTo(map.current);
-            geocodedWaypoints.current = [fromNodeId, toNodeId];
-            currentRoute.current = {
-              fromId: fromNodeId,
-              toId: toNodeId,
-              fromLngLat: [fLng, fLat],
-              toLngLat: [tLng, tLat],
-              fromName: fromNameUrl,
-              toName: toNameUrl,
-            };
-            setFromText(fromNameUrl || fmtCoord(fLat, fLng));
-            setToText(toNameUrl || fmtCoord(tLat, tLng));
-            const result = findRoute(fromNodeId, toNodeId);
-            if (result) {
-              map.current
-                .getSource("route")
-                .setData({ type: "Feature", geometry: result.geometry });
-              setDistanceM(result.distanceM);
-              routeCoords.current = result.geometry.coordinates;
-              fitToRoute(result.geometry.coordinates);
-            }
-          }
+      const wpParams = params.getAll("wp");
+      if (wpParams.length > 0) {
+        const restored = [];
+        for (const raw of wpParams) {
+          const firstComma = raw.indexOf(",");
+          const secondComma = raw.indexOf(",", firstComma + 1);
+          const lat = Number(raw.slice(0, firstComma));
+          const lng = Number(raw.slice(firstComma + 1, secondComma));
+          const label = decodeURIComponent(raw.slice(secondComma + 1));
+          if (isNaN(lat) || isNaN(lng)) continue;
+
+          const nodeId = snapToNode(lat, lng);
+          if (!nodeId) continue;
+
+          const id = crypto.randomUUID();
+          const marker = new Marker().setLngLat([lng, lat]).addTo(map.current);
+          markers.current.push({ id, marker });
+          restored.push({ id, nodeId, lngLat: [lng, lat], label });
+        }
+        if (restored.length > 0) {
+          setWaypoints(restored); // load route
         }
       }
     });
 
-    // handle clicks
+    // handle clicks, each click appends a waypoint
     map.current.on("click", (e) => {
       if (!graphReady.current) return;
 
-      const { lat, lng } = e.lngLat; // first click selects start pt, second click selects end pt
-
-      const nodeId = snapToNode(lat, lng); // snaps clicks to closest node
-
+      const { lat, lng } = e.lngLat;
+      const nodeId = snapToNode(lat, lng); // snaps click to closest graph node
       if (!nodeId) return;
 
-      waypoints.current.push(nodeId);
+      setError(null);
 
-      if (waypoints.current.length === 1) {
-        // 1st click, place start marker and clear any previous route and markers
-        setError(null);
-        if (markers.current.start) markers.current.start.remove();
-        if (markers.current.end) markers.current.end.remove();
-        markers.current.start = new Marker({ color: "#008000" })
-          .setLngLat([lng, lat])
-          .addTo(map.current);
-        setDistanceM(null);
-        setFromText(fmtCoord(lat, lng));
-        setToText("");
-        currentRoute.current = {
-          fromId: nodeId,
-          toId: null,
-          fromLngLat: [lng, lat],
-          toLngLat: null,
-          fromName: null, // click-placed, no name
-          toName: null,
-        }; // reset and store fromLngLat
-        map.current
-          .getSource("route")
-          .setData({ type: "FeatureCollection", features: [] });
-      }
+      const id = crypto.randomUUID();
+      const label = fmtCoord(lat, lng);
 
-      if (waypoints.current.length === 2) {
-        // if 2nd click, place end marker and find route
-        markers.current.end = new Marker({ color: "#D30000" })
-          .setLngLat([lng, lat])
-          .addTo(map.current);
-        setToText(fmtCoord(lat, lng));
+      // place marker (color will be corrected by the storedWaypoints useEffect)
+      const marker = new Marker().setLngLat([lng, lat]).addTo(map.current);
+      markers.current.push({ id, marker });
 
-        // find route
-        const [startId, endId] = waypoints.current;
-        const result = findRoute(startId, endId);
-
-        if (result) {
-          routeCoords.current = result.geometry.coordinates;
-          map.current.getSource("route").setData({
-            // push route to GUI
-            type: "Feature",
-            geometry: result.geometry,
-          });
-          setDistanceM(result.distanceM);
-
-          currentRoute.current.toId = endId;
-          currentRoute.current.toLngLat = [lng, lat];
-          updateUrl(currentRoute.current.fromLngLat, [lng, lat]); // write coords to url, no names for click-placed
-          fitToRoute(result.geometry.coordinates); // zoom out to show the entire extent of the route
-        } else {
-          setError("no route found");
-        }
-        waypoints.current = []; // reset for next route
-      }
+      addWaypoint({ id, nodeId, lngLat: [lng, lat], label });
     });
   }, []);
 
@@ -257,58 +244,46 @@ export default function Map() {
     return () => clearTimeout(t);
   }, [error]);
 
-  function handleGeocode(field, lat, lng, name) {
+  // geocode search result and append as a new waypoint
+  function handleGeocode(lat, lng, name) {
     setError(null);
     if (!graphReady.current) return;
 
     const nodeId = snapToNode(lat, lng);
     if (!nodeId) return;
 
-    if (field === "from") {
-      if (markers.current.start) markers.current.start.remove();
-      markers.current.start = new Marker({ color: "#008000" })
-        .setLngLat([lng, lat])
-        .addTo(map.current);
-      geocodedWaypoints.current[0] = nodeId;
-      currentRoute.current.fromId = nodeId; // store node for flip
-      currentRoute.current.fromLngLat = [lng, lat];
-      currentRoute.current.fromName = name; // store search name
-      map.current.flyTo({ center: [lng, lat], zoom: 14 }); // move to start pt
-    } else {
-      if (markers.current.end) markers.current.end.remove();
-      markers.current.end = new Marker({ color: "#D30000" })
-        .setLngLat([lng, lat])
-        .addTo(map.current);
-      geocodedWaypoints.current[1] = nodeId;
-      currentRoute.current.toId = nodeId; // store for flip
-      currentRoute.current.toLngLat = [lng, lat];
-      currentRoute.current.toName = name; // store search name
-      if (!geocodedWaypoints.current[0])
-        // only fly if 'from' isn't set yet
-        map.current.flyTo({ center: [lng, lat], zoom: 14 });
-    }
+    const id = crypto.randomUUID();
 
-    // route automatically once both fields are geocoded
-    const [fromId, toId] = geocodedWaypoints.current;
-    if (fromId && toId) {
-      const result = findRoute(fromId, toId);
-      if (result) {
-        routeCoords.current = result.geometry.coordinates;
-        map.current
-          .getSource("route")
-          .setData({ type: "Feature", geometry: result.geometry });
-        setDistanceM(result.distanceM);
-        updateUrl(
-          currentRoute.current.fromLngLat,
-          currentRoute.current.toLngLat,
-          currentRoute.current.fromName,
-          currentRoute.current.toName,
-        ); // update url
-        fitToRoute(result.geometry.coordinates);
-      } else {
-        setError("no route found");
-      }
-    }
+    // place marker
+    const marker = new Marker().setLngLat([lng, lat]).addTo(map.current);
+    markers.current.push({ id, marker });
+
+    map.current.flyTo({ center: [lng, lat], zoom: 14 }); // fly to added point
+    addWaypoint({ id, nodeId, lngLat: [lng, lat], label: name });
+  }
+
+  // remove a waypoint by id, also removes its marker
+  function handleRemoveWaypoint(id) {
+    const entry = markers.current.find((m) => m.id === id);
+    if (entry) entry.marker.remove();
+    markers.current = markers.current.filter((m) => m.id !== id);
+    removeWaypoint(id);
+  }
+
+  // reorder waypoints (from drag), markers array stays in sync
+  function handleReorder(reordered) {
+    // reorder markers.current to match new waypoint order
+    markers.current = reordered.map((wp) =>
+      markers.current.find((m) => m.id === wp.id),
+    );
+    setWaypoints(reordered);
+  }
+
+  // flip waypoint order (reverse the list)
+  function flip() {
+    const reversed = [...storedWaypoints].reverse();
+    markers.current = [...markers.current].reverse();
+    setWaypoints(reversed);
   }
 
   // pcn visibility toggle
@@ -322,18 +297,14 @@ export default function Map() {
     );
   }
 
-  // reset navigation / clear start/end fields
+  // reset. clear all waypoints, markers, and route
   function reset() {
-    if (markers.current.start) markers.current.start.remove();
-    if (markers.current.end) markers.current.end.remove();
-    markers.current = { start: null, end: null };
-    waypoints.current = [];
-    geocodedWaypoints.current = [null, null];
-    setDistanceM(null);
+    markers.current.forEach(({ marker }) => marker.remove());
+    markers.current = [];
+    setWaypoints([]);
+    setTotalDistanceM(null);
     setError(null);
-    setFromText(""); // clear input fields
-    setToText("");
-    routeCoords.current = null; // get rid of coords
+    setRouteCoords(null);
     clearUrl();
     map.current
       .getSource("route")
@@ -342,78 +313,6 @@ export default function Map() {
       center: [SINGAPORE.lng, SINGAPORE.lat],
       zoom: ZOOM,
     }); // zoom back to default
-  }
-
-  // swap the start and end pts
-  function flip() {
-    const { fromId, toId, fromLngLat, toLngLat, fromName, toName } =
-      currentRoute.current;
-
-    // swap stored state including names
-    currentRoute.current = {
-      fromId: toId,
-      toId: fromId,
-      fromLngLat: toLngLat,
-      toLngLat: fromLngLat,
-      fromName: toName,
-      toName: fromName,
-    };
-    geocodedWaypoints.current = [toId ?? null, fromId ?? null];
-
-    // if both points exist, just move markers to swapped positions
-    if (fromLngLat && toLngLat) {
-      markers.current.start?.setLngLat(toLngLat);
-      markers.current.end?.setLngLat(fromLngLat);
-    }
-    // if only start exists, remove start and create end at that position
-    else if (fromLngLat && !toLngLat) {
-      markers.current.start?.remove();
-      markers.current.start = null;
-      markers.current.end = new Marker({ color: "#D30000" })
-        .setLngLat(fromLngLat)
-        .addTo(map.current);
-    }
-    // if only end exists, remove end and create start at that position
-    else if (!fromLngLat && toLngLat) {
-      markers.current.end?.remove();
-      markers.current.end = null;
-      markers.current.start = new Marker({ color: "#008000" })
-        .setLngLat(toLngLat)
-        .addTo(map.current);
-    }
-
-    // swap text fields
-    setFromText(toText);
-    setToText(fromText);
-
-    // re-route if both points exist after flip
-    const [newFromId, newToId] = geocodedWaypoints.current;
-    if (newFromId && newToId) {
-      const result = findRoute(newFromId, newToId);
-      if (result) {
-        routeCoords.current = result.geometry.coordinates;
-        map.current
-          .getSource("route")
-          .setData({ type: "Feature", geometry: result.geometry });
-        setDistanceM(result.distanceM);
-        updateUrl(
-          currentRoute.current.fromLngLat,
-          currentRoute.current.toLngLat,
-          currentRoute.current.fromName,
-          currentRoute.current.toName,
-        ); // update url after flip
-        fitToRoute(result.geometry.coordinates);
-      } else {
-        setError("no route found");
-      }
-    } else {
-      // if only a single point after flip, clear any existing route
-      map.current
-        .getSource("route")
-        ?.setData({ type: "FeatureCollection", features: [] });
-      setDistanceM(null);
-      clearUrl();
-    }
   }
 
   return (
@@ -425,11 +324,8 @@ export default function Map() {
         onError={setError}
         onReset={reset}
         onFlip={flip}
-        fromText={fromText}
-        toText={toText}
-        onFromChange={setFromText}
-        onToChange={setToText}
-        getRouteCoords={() => routeCoords.current}
+        onRemoveWaypoint={handleRemoveWaypoint}
+        onReorder={handleReorder}
       />
 
       {/* loading message */}
@@ -476,7 +372,6 @@ export default function Map() {
       )}
 
       <StatsPanel
-        distanceM={distanceM}
         speed={speed}
         onSpeedChange={setSpeed}
         networkVisible={networkVisible}

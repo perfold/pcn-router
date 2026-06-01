@@ -8,10 +8,11 @@ a client-side bike route planner for Singapore that prioritises the Park Connect
 
 ## features
 
-- **search or click**: type an address to geocode a start/end point, or click directly on the map
+- **search or click**: type an address or click the map to add stops. plan a full day's journey across multiple destinations
+- **multi-stop routing**: add as many stops as you want, drag to reorder, flip the whole route, or remove individual stops
 - **PCN-prioritised routing**: prefers dedicated cycling infrastructure over shared footways
 - **shareable routes**: copy the url once a route is loaded, recipients see the same route when they open it
-- **gpx export**: download the route as a `.gpx` file for use in cycling apps (e.g. Garmin, Komoot) or on a bike computer
+- **gpx export**: download the route as a `.gpx` file for use in cycling apps (e.g. Garmin, Strava) or on a bike computer
 - **speed-adjusted time estimate**: adjustable speed slider for personalised eta, can be used for runners too
 - **show/hide PCN overlay**: toggle visibility of the dedicated cycling network on the map
 - **mobile-friendly**: responsive layout that works on phones
