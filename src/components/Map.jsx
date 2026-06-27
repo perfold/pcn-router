@@ -33,6 +33,7 @@ export default function Map() {
   const graphReady = useRef(false); // true once graph.geojson is loaded
   const markers = useRef([]); // [{ id, marker }], parallel to storedWaypoints
   const [networkVisible, setNetworkVisible] = useState(false); // pcn network layer visibility toggle
+  const [satelliteVisible, setSatelliteVisible] = useState(false); // esri satellite layer visibility toggle
   const [loading, setLoading] = useState(true); // used for loading message
   const [error, setError] = useState(null);
   const [speed, setSpeed] = useState(15); // km/h, user adjustable (slider)
@@ -147,6 +148,25 @@ export default function Map() {
 
     // wait for base map to finish loading before adding layers
     map.current.on("load", async () => {
+      // esri satellite map
+      map.current.addSource("satellite", {
+        type: "raster",
+        tiles: [
+          "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        ],
+        tileSize: 256,
+        maxzoom: 19,
+        attribution:
+          "Source: Esri, Vantor, Earthstar Geographics, and the GIS User Community",
+      });
+
+      map.current.addLayer({
+        id: "satellite",
+        type: "raster",
+        source: "satellite",
+        layout: { visibility: "none" },
+      });
+
       const res = await fetch(`${import.meta.env.BASE_URL}data/graph.geojson`);
       const geojson = await res.json();
 
@@ -297,6 +317,17 @@ export default function Map() {
     );
   }
 
+  // satellite visibility toggle
+  function toggleSatellite() {
+    const next = !satelliteVisible;
+    setSatelliteVisible(next);
+    map.current.setLayoutProperty(
+      "satellite",
+      "visibility",
+      next ? "visible" : "none",
+    );
+  }
+
   // reset. clear all waypoints, markers, and route
   function reset() {
     markers.current.forEach(({ marker }) => marker.remove());
@@ -376,6 +407,8 @@ export default function Map() {
         onSpeedChange={setSpeed}
         networkVisible={networkVisible}
         onToggleNetwork={toggleNetwork}
+        satelliteVisible={satelliteVisible}
+        onToggleSatellite={toggleSatellite}
       />
     </div>
   );

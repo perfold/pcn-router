@@ -6,6 +6,8 @@ export default function StatsPanel({
   onSpeedChange,
   onToggleNetwork,
   networkVisible,
+  onToggleSatellite,
+  satelliteVisible,
 }) {
   const totalDistanceM = useStore((s) => s.totalDistanceM);
   const distanceKm = totalDistanceM ? (totalDistanceM / 1000).toFixed(1) : "—";
@@ -14,7 +16,23 @@ export default function StatsPanel({
     : "—";
   const isMobile = useIsMobile();
   const fs = isMobile ? 10 : 16; // font size
+  const fsSmall = isMobile ? 6 : 12; // font size
   const pad = isMobile ? "4px 4px" : "16px 16px"; // panel padding
+
+  // style for the satellite view and pcn buttons
+  function toggleStyle(active) {
+    return {
+      padding: "4px 4px",
+      borderRadius: 6,
+      borderWidth: 1,
+      borderStyle: "solid",
+      fontSize: fsSmall,
+      cursor: "pointer",
+      background: active ? "#374151" : "#f9fafb",
+      color: active ? "white" : "#374151",
+      borderColor: active ? "#374151" : "#e5e7eb",
+    };
+  }
 
   return (
     <div
@@ -31,23 +49,31 @@ export default function StatsPanel({
         maxWidth: isMobile ? "calc(50vw - 24px)" : "none", // prevent overlap with search panel
       }}
     >
-      {/* show/hide PCN button */}
-      <button
+      {/* satellite and pcn toggle buttons */}
+      <div
         style={{
           position: "absolute", // positions relative to the panel
           top: isMobile ? 10 : 16,
           right: isMobile ? 12 : 16,
-          padding: "4px 4px",
-          borderRadius: 6,
-          border: "1px solid #e5e7eb",
-          background: "#f9fafb",
-          fontSize: fs,
-          cursor: "pointer",
+          display: "flex",
+          flexDirection: "column", // stack instead of side-by-side
+          gap: 4,
+          alignItems: "stretch", // both buttons same width
         }}
-        onClick={onToggleNetwork}
       >
-        {networkVisible ? "hide" : "show"} PCN
-      </button>
+        {/* satellite view toggle */}
+        <button
+          style={toggleStyle(satelliteVisible)}
+          onClick={onToggleSatellite}
+        >
+          satellite
+        </button>
+
+        {/* show/hide PCN button */}
+        <button style={toggleStyle(networkVisible)} onClick={onToggleNetwork}>
+          PCN
+        </button>
+      </div>
 
       {/* km display */}
       <div>
@@ -69,7 +95,6 @@ export default function StatsPanel({
           value={speed}
           onChange={(e) => onSpeedChange(Number(e.target.value))}
           style={{ width: "100%" }}
-          color="#750000"
         />
       </div>
     </div>
