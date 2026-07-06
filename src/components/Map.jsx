@@ -30,7 +30,7 @@ function fmtCoord(lat, lng) {
 export default function Map() {
   const container = useRef(null);
   const map = useRef(null);
-  const graphReady = useRef(false); // true once graph.geojson is loaded
+  const graphReady = useRef(false); // true once the graph binary is loaded
   const markers = useRef([]); // [{ id, marker }], parallel to storedWaypoints
   const [networkVisible, setNetworkVisible] = useState(false); // pcn network layer visibility toggle
   const [satelliteVisible, setSatelliteVisible] = useState(false); // esri satellite layer visibility toggle
@@ -167,12 +167,17 @@ export default function Map() {
         layout: { visibility: "none" },
       });
 
-      const res = await fetch(`${import.meta.env.BASE_URL}data/graph.geojson`);
-      const geojson = await res.json();
+      // load pcn overlay
+      console.time("fetch overlay");
+      const overlayRes = await fetch(
+        `${import.meta.env.BASE_URL}data/pcn-overlay.geojson`,
+      );
+      const overlay = await overlayRes.json();
+      console.timeEnd("fetch overlay");
 
       map.current.addSource("graph", {
         type: "geojson",
-        data: geojson,
+        data: overlay,
       });
 
       // paths that overlap with nparks/lta/ura reference data (preferred by router)
@@ -205,7 +210,19 @@ export default function Map() {
         },
       });
 
-      await loadGraph(geojson);
+      // routing graph
+      console.time("loadGraph");
+      const [meta, bin] = await Promise.all([
+        fetch(`${import.meta.env.BASE_URL}data/graph.meta.json`).then((r) =>
+          r.json(),
+        ),
+        fetch(`${import.meta.env.BASE_URL}data/graph.bin`).then((r) =>
+          r.arrayBuffer(),
+        ),
+      ]);
+      await loadGraph(meta, bin);
+      console.timeEnd("loadGraph");
+
       graphReady.current = true;
       setLoading(false);
 

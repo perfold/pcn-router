@@ -2,7 +2,7 @@
 - downloads OSM Singapore map, with only cycle-able paths
 - compares overlap with "ground truth" NParks, LTA and URA geojson, from data.gov.sg
 - rewards paths that overlap with "ground truth", as well as certain types of paths (see highway_multipliers)
-- generates geojson graph with weighted edges
+- generates a packed binary graph (graph.bin + graph.meta.json) for the router + pcn-overlay.geojson for the pcn layer
 """
 
 import json
@@ -10,11 +10,16 @@ import sys
 from pathlib import Path
 import geopandas as gpd
 import osmnx as ox
+import numpy as np
 from collections import Counter
 
 root = Path(__file__).parent.parent
 merged_path = root / "public" / "data" / "merged.geojson" # merged geojson from NParks, LTA and URA datasets
-output_path = root / "public" / "data" / "graph.geojson"
+bin_path = root / "public" / "data" / "graph.bin" # packed routing graph 
+meta_path = root / "public" / "data" / "graph.meta.json"
+overlay_path = root / "public" / "data" / "pcn-overlay.geojson" # dedicated cyclepath edges only, for the map overlay
+
+coord_scale = 10_000_000
 
 crs_sg = "EPSG:3414" # svy21
 
@@ -119,32 +124,112 @@ def assign_weights(edges: gpd.GeoDataFrame, merged: gpd.GeoDataFrame) -> gpd.Geo
 
     return edges
 
-# export graph as geojson
-def export_graph(edges: gpd.GeoDataFrame, path: Path) -> None:
-    print("Exporting graph.geojson...")
-    features = []
+# export the routing graph as a packed binary + the pcn overlay geojson.
+def export_binary(edges: gpd.GeoDataFrame, bin_path: Path, meta_path: Path, overlay_path: Path) -> None:
+    print("Exporting graph.bin + meta + overlay...")
+
+    node_index = {} 
+    node_osm = []
+    node_lng = []  
+    node_lat = []    
+
+    def get_node(osm_id, lng, lat):
+        idx = node_index.get(osm_id)
+        if idx is None:
+            idx = len(node_osm)
+            node_index[osm_id] = idx
+            node_osm.append(osm_id)
+            node_lng.append(lng)
+            node_lat.append(lat)
+        return idx
+
+    edge_from = [] 
+    edge_to = []  
+    edge_weight = [] 
+    coord_offsets = [0]
+    packed_lng = []
+    packed_lat = []
+
     for _, row in edges.iterrows():
-        features.append({
+        coords = list(row.geometry.coords)
+        f_lng, f_lat = coords[0]
+        t_lng, t_lat = coords[-1]
+        fi = get_node(int(row["u"]), f_lng, f_lat)
+        ti = get_node(int(row["v"]), t_lng, t_lat)
+        edge_from.append(fi)
+        edge_to.append(ti)
+        edge_weight.append(round(float(row["weight"]), 1))
+        for x, y in coords:
+            packed_lng.append(x)
+            packed_lat.append(y)
+        coord_offsets.append(len(packed_lng))
+
+    num_nodes = len(node_osm)
+    num_edges = len(edge_from)
+    num_coords = len(packed_lng)
+
+    arrays = {
+        "node_osm": np.array(node_osm, dtype=np.uint64),
+        "node_lng": np.round(np.array(node_lng) * coord_scale).astype(np.int32),
+        "node_lat": np.round(np.array(node_lat) * coord_scale).astype(np.int32),
+        "edge_from": np.array(edge_from, dtype=np.uint32),
+        "edge_to": np.array(edge_to, dtype=np.uint32),
+        "edge_weight": np.array(edge_weight, dtype=np.float32),
+        "coord_offsets": np.array(coord_offsets, dtype=np.uint32),
+        "packed_lng": np.round(np.array(packed_lng) * coord_scale).astype(np.int32),
+        "packed_lat": np.round(np.array(packed_lat) * coord_scale).astype(np.int32),
+    }
+
+    section_order = [
+        "node_osm", "node_lng", "node_lat",
+        "edge_from", "edge_to", "edge_weight",
+        "coord_offsets", "packed_lng", "packed_lat",
+    ]
+    meta = {
+        "format": "pcn-graph-bin/1",
+        "coord_scale": coord_scale,
+        "num_nodes": num_nodes,
+        "num_edges": num_edges,
+        "num_coords": num_coords,
+        "little_endian": True,
+        "sections": [],
+    }
+    offset = 0
+    buffers = []
+    for name in section_order:
+        arr = arrays[name].astype(arrays[name].dtype.newbyteorder("<"))
+        b = arr.tobytes()
+        meta["sections"].append({
+            "name": name,
+            "dtype": str(arr.dtype).replace("<", ""),
+            "count": int(arr.size),
+            "byte_offset": offset,
+            "byte_length": len(b),
+        })
+        buffers.append(b)
+        offset += len(b)
+
+    bin_path.write_bytes(b"".join(buffers))
+    meta_path.write_text(json.dumps(meta, indent=2))
+
+    # dedicated cycle path geojson
+    overlay = {"type": "FeatureCollection", "features": [
+        {
             "type": "Feature",
             "geometry": {
                 "type": "LineString",
-                "coordinates": [[round(x, 6), round(y, 6)] for x, y in row.geometry.coords]
+                "coordinates": [[round(x, 6), round(y, 6)] for x, y in row.geometry.coords],
             },
-            "properties": {
-                "from": int(row["u"]),
-                "to": int(row["v"]),
-                "weight": round(float(row["weight"]), 1),
-                "path_type": row["path_type"],
-                "highway": row["highway"] if isinstance(row["highway"], str) else row["highway"][0]
-            }
-        })
+            "properties": {"path_type": "dedicated"},
+        }
+        for _, row in edges[edges["path_type"] == "dedicated"].iterrows()
+    ]}
+    overlay_path.write_text(json.dumps(overlay, separators=(",", ":")))
 
-    geojson = {"type": "FeatureCollection", "features": features}
-    with open(path, "w") as f:
-        json.dump(geojson, f, separators=(",", ":"))
-
-    size_mb = path.stat().st_size / 1_000_000
-    print(f"{len(features)} edges: {size_mb:.1f} MB")
+    bin_mb = bin_path.stat().st_size / 1_000_000
+    ov_mb = overlay_path.stat().st_size / 1_000_000
+    print(f"{num_nodes} nodes, {num_edges} edges")
+    print(f"graph.bin: {bin_mb:.1f} MB, pcn-overlay.geojson: {ov_mb:.1f} MB")
 
 
 def main() -> None:
@@ -168,9 +253,9 @@ def main() -> None:
     edges = edges.sort_values("weight")
     edges = edges.drop_duplicates(subset=["u", "v"], keep="first")
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    export_graph(edges, output_path)
-    print(f"\nDone: {output_path}")
+    bin_path.parent.mkdir(parents=True, exist_ok=True)
+    export_binary(edges, bin_path, meta_path, overlay_path)
+    print(f"\nDone: {bin_path}")
 
 
 if __name__ == "__main__":
