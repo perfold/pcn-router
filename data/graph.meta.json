@@ -1,0 +1,73 @@
+{
+  "format": "pcn-graph-bin/1",
+  "coord_scale": 10000000,
+  "num_nodes": 91216,
+  "num_edges": 233812,
+  "num_coords": 979045,
+  "little_endian": true,
+  "sections": [
+    {
+      "name": "node_osm",
+      "dtype": "uint64",
+      "count": 91216,
+      "byte_offset": 0,
+      "byte_length": 729728
+    },
+    {
+      "name": "node_lng",
+      "dtype": "int32",
+      "count": 91216,
+      "byte_offset": 729728,
+      "byte_length": 364864
+    },
+    {
+      "name": "node_lat",
+      "dtype": "int32",
+      "count": 91216,
+      "byte_offset": 1094592,
+      "byte_length": 364864
+    },
+    {
+      "name": "edge_from",
+      "dtype": "uint32",
+      "count": 233812,
+      "byte_offset": 1459456,
+      "byte_length": 935248
+    },
+    {
+      "name": "edge_to",
+      "dtype": "uint32",
+      "count": 233812,
+      "byte_offset": 2394704,
+      "byte_length": 935248
+    },
+    {
+      "name": "edge_weight",
+      "dtype": "float32",
+      "count": 233812,
+      "byte_offset": 3329952,
+      "byte_length": 935248
+    },
+    {
+      "name": "coord_offsets",
+      "dtype": "uint32",
+      "count": 233813,
+      "byte_offset": 4265200,
+      "byte_length": 935252
+    },
+    {
+      "name": "packed_lng",
+      "dtype": "int32",
+      "count": 979045,
+      "byte_offset": 5200452,
+      "byte_length": 3916180
+    },
+    {
+      "name": "packed_lat",
+      "dtype": "int32",
+      "count": 979045,
+      "byte_offset": 9116632,
+      "byte_length": 3916180
+    }
+  ]
+}
