@@ -95,7 +95,7 @@ bot.command("start", (ctx) =>
   ctx.reply(
     "🚴 *pcn\\-router bot*\n\n" +
       "plan a cycling route across singapore's park connector network\\.\n\n" +
-      '• send an *address* \\(e\\.g\\. "punggol waterway park"\\) or a *location pin* to add a stop\n' +
+      '• send an *address* \\(e\\.g\\. "waterway point"\\) or a *location pin* to add a stop\n' +
       "• reorder or remove stops with the buttons\n" +
       "• hit *route\\!* to get the path, distance, gpx file and a shareable link\n\n" +
       "/add \\- add a stop\n/route \\- route the current stops\n/stops \\- show current stops\n/clear \\- start over",

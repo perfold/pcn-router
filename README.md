@@ -4,6 +4,8 @@ a client-side bike route planner for Singapore that prioritises the Park Connect
 
 ### live at: [https://perfold.github.io/pcn-router](https://perfold.github.io/pcn-router)
 
+### try it out on telegram at: [@pcnrouterbot](https://t.me/pcnrouterbot)
+
 ---
 
 ## features

@@ -6,6 +6,8 @@ add stops by sending an address or a location pin, reorder them, and get back a 
 
 unlike the web app (which is fully client-side, no backend), this bot is a **self-hosted** long-running Node process. it's designed to run on modest hardware, built and tested on my Raspberry Pi 3B (2GB RAM).
 
+## try it out on telegram at: [@pcnrouterbot](https://t.me/pcnrouterbot)
+
 ---
 
 ## commands
