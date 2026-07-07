@@ -2,7 +2,7 @@
 
 a client-side bike route planner for Singapore that prioritises the Park Connector Network (PCN). type an address or click the map to set a start and end point. the router finds the most cycling-friendly path, preferring dedicated PCN and cycling infrastructure over shared footways.
 
-### live at: [https://perfold.github.io/pcn-router]
+### live at: [https://perfold.github.io/pcn-router](https://perfold.github.io/pcn-router)
 
 ---
 
@@ -15,7 +15,8 @@ a client-side bike route planner for Singapore that prioritises the Park Connect
 - **gpx export**: download the route as a `.gpx` file for use in cycling apps (e.g. Garmin, Strava) or on a bike computer
 - **speed-adjusted time estimate**: adjustable speed slider for personalised eta, can be used for runners too
 - **show/hide PCN overlay**: toggle visibility of the dedicated cycling network on the map
-- **mobile-friendly**: responsive layout that works on phones
+- **mobile-friendly**: responsive web-app layout that works on phones
+- **telegram bot**: companion telegram bot for convenient route planning. see [`bot/README.md`](bot/README.md) for details and setup.
 
 ---
 
