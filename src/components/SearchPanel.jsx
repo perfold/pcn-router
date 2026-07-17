@@ -13,6 +13,7 @@ export default function SearchPanel({
   onReorder,
   onUseCurrentLocation,
   onFindNearest,
+  onNavigate,
 }) {
   const [query, setQuery] = useState(""); // single search input
   const [copied, setCopied] = useState(false);
@@ -51,7 +52,7 @@ export default function SearchPanel({
   async function handleNearest() {
     if (findingNearest) return;
     if (!query.trim()) {
-      onError("type a place first, e.g. 7-11");
+      onError("type a place first");
       return;
     }
     setFindingNearest(true);
@@ -195,6 +196,19 @@ ${trackpoints}
           export .gpx
         </button>
       </div>
+
+      {/* start nav mode along the current route */}
+      <button
+        onClick={onNavigate}
+        style={{
+          opacity: hasRoute ? 1 : 0.4,
+          cursor: hasRoute ? "pointer" : "default",
+          fontSize: fs,
+          padding: pad,
+        }}
+      >
+        navigate
+      </button>
 
       {/* collapsible waypoint list with drag to reorder*/}
       {waypoints.length > 0 && (

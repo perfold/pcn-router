@@ -21,6 +21,7 @@ a client-side bike route planner for Singapore that prioritises the Park Connect
 - **show/hide PCN overlay**: toggle visibility of the dedicated cycling network on the map
 - **mobile-friendly**: responsive web-app layout that works on phones
 - **telegram bot**: companion telegram bot for convenient route planning. see [`bot/README.md`](bot/README.md) for details and setup.
+- **navigation mode**: gmaps-like navigation with simple UI, with current speed, eta and off-route detection.
 
 ---
 

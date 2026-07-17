@@ -2,13 +2,21 @@ import { useEffect, useRef, useState } from "react";
 import { Map as MaplibreMap, NavigationControl, Marker } from "maplibre-gl";
 import { loadGraph, snapToNode, findRoute } from "../lib/graph";
 import { findNearest } from "../lib/geocode";
+import { haversineM } from "../lib/nearest";
 import StatsPanel from "./StatsPanel";
 import SearchPanel from "./SearchPanel";
+import NavPanel from "./NavPanel";
 import { useIsMobile } from "../lib/isMobile";
 import { useStore } from "../store";
 
 const SINGAPORE = { lng: 103.8198, lat: 1.3521 }; // map centres here on load
 const ZOOM = 11;
+const NAV_ZOOM = 18; // zoom level during nav mode (higher = more zoomed in)
+const OFF_ROUTE_M = 50; // 'off route' threshold
+const LEADIN_MIN_M = 80; // dont prepend a lead-in if youre alr this close to the first waypoint
+const ACCURACY_GATE_M = 40; // ignore gps fixes less accurate than this
+const MAX_KMH = 60; // prevent crazy speed spikes from gps noise
+const STATIONARY_KMH = 5; // treat anything slower as not moving
 
 function clearUrl() {
   history.replaceState(null, "", window.location.pathname);
@@ -28,6 +36,50 @@ function fmtCoord(lat, lng) {
   return `${lat.toFixed(4)},${lng.toFixed(4)}`; // display text for click-placed coords
 }
 
+// cumulative distance, to check remaining distance in a route
+function buildCumulative(coords) {
+  const cumulative = new Float64Array(coords.length);
+  for (let i = 1; i < coords.length; i++) {
+    cumulative[i] =
+      cumulative[i - 1] +
+      haversineM(
+        coords[i - 1][1],
+        coords[i - 1][0],
+        coords[i][1],
+        coords[i][0],
+      );
+  }
+  return cumulative;
+}
+
+function nearestCoordIdx(coords, lat, lng) {
+  const cosLat = Math.cos((lat * Math.PI) / 180);
+  let best = 0;
+  let bestD = Infinity;
+  for (let i = 0; i < coords.length; i++) {
+    const dLng = (coords[i][0] - lng) * cosLat;
+    const dLat = coords[i][1] - lat;
+    const d = dLng * dLng + dLat * dLat;
+    if (d < bestD) {
+      bestD = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+// location dot with a heading arrow for nav mode
+function makeUserDot() {
+  const el = document.createElement("div");
+  el.style.cssText = "width:22px;height:30px;position:relative;";
+  el.innerHTML =
+    '<div style="position:absolute;left:50%;top:1px;transform:translateX(-50%);width:0;height:0;' +
+    'border-left:6px solid transparent;border-right:6px solid transparent;border-bottom:9px solid #750000;"></div>' +
+    '<div style="position:absolute;left:0;top:8px;width:22px;height:22px;border-radius:50%;' +
+    'background:#750000;border:3px solid #fff;box-sizing:border-box;box-shadow:0 1px 4px rgba(0,0,0,0.4);"></div>';
+  return el;
+}
+
 export default function Map() {
   const container = useRef(null);
   const map = useRef(null);
@@ -39,6 +91,10 @@ export default function Map() {
   const [error, setError] = useState(null);
   const [speed, setSpeed] = useState(15); // km/h, user adjustable (slider)
 
+  const [navigating, setNavigating] = useState(false);
+  const [navStats, setNavStats] = useState(null); // { remainingM, speedKmh, etaMin, offRoute }
+  const nav = useRef(null);
+
   const {
     setTotalDistanceM,
     setRouteCoords,
@@ -46,9 +102,13 @@ export default function Map() {
     setWaypoints,
     removeWaypoint,
     waypoints: storedWaypoints,
+    routeCoords: storedRouteCoords,
   } = useStore();
 
   const isMobile = useIsMobile(); // for mobile layouts
+
+  const speedRef = useRef(speed);
+  speedRef.current = speed;
 
   // zooms map to fit a route's coordinate array
   function fitToRoute(coords) {
@@ -211,6 +271,23 @@ export default function Map() {
         },
       });
 
+      // grey dashed line from current location to closest point on route (if you are offroute)
+      map.current.addSource("offroute", {
+        type: "geojson",
+        data: { type: "FeatureCollection", features: [] },
+      });
+
+      map.current.addLayer({
+        id: "offroute-line",
+        type: "line",
+        source: "offroute",
+        paint: {
+          "line-color": "#9ca3af",
+          "line-width": 3,
+          "line-dasharray": [2, 2],
+        },
+      });
+
       // routing graph
       console.time("loadGraph");
       const [meta, bin] = await Promise.all([
@@ -257,6 +334,7 @@ export default function Map() {
     // handle clicks, each click appends a waypoint
     map.current.on("click", (e) => {
       if (!graphReady.current) return;
+      if (nav.current) return; // prevent adding of waypoints during nav mode
 
       const { lat, lng } = e.lngLat;
       const nodeId = snapToNode(lat, lng); // snaps click to closest graph node
@@ -281,6 +359,20 @@ export default function Map() {
     const t = setTimeout(() => setError(null), 2500); // error lasts 2.5s
     return () => clearTimeout(t);
   }, [error]);
+
+  // stop sensors and remove the dot if the component ever unmounts mid-nav
+  useEffect(
+    () => () => {
+      const session = nav.current;
+      if (session) {
+        if (session.watchId != null)
+          navigator.geolocation.clearWatch(session.watchId);
+        session.stopCompass?.();
+        session.marker?.remove();
+      }
+    },
+    [],
+  );
 
   // geocode search result and append as a new waypoint
   function handleGeocode(lat, lng, name) {
@@ -370,6 +462,273 @@ export default function Map() {
     handleGeocode(hit.lat, hit.lng, name);
   }
 
+  // compass heading via deviceorientation, stored on the session
+  function startCompass(session) {
+    const handler = (e) => {
+      let hdg = null;
+      if (typeof e.webkitCompassHeading === "number") {
+        hdg = e.webkitCompassHeading; // ios, already clockwise from north
+      } else if (e.absolute && e.alpha != null) {
+        hdg = (360 - e.alpha) % 360; // android absolute orientation
+      }
+      if (hdg == null || Number.isNaN(hdg)) return;
+      session.heading = hdg;
+
+      // rotate the map as the phone rotates
+      const now = Date.now();
+      if (
+        nav.current === session &&
+        session.marker &&
+        now - session.lastRotateAt > 300
+      ) {
+        session.lastRotateAt = now;
+        session.marker.setRotation(hdg);
+        map.current.easeTo({ bearing: hdg, duration: 300 });
+      }
+    };
+
+    const evt =
+      "ondeviceorientationabsolute" in window
+        ? "deviceorientationabsolute"
+        : "deviceorientation";
+
+    // ios 13+ gates the compass behind an explicit permission prompt
+    if (
+      typeof DeviceOrientationEvent !== "undefined" &&
+      typeof DeviceOrientationEvent.requestPermission === "function"
+    ) {
+      DeviceOrientationEvent.requestPermission()
+        .then((p) => {
+          if (p === "granted") window.addEventListener(evt, handler);
+        })
+        .catch(() => {}); // if no compass, its fine, gps course takes over
+    } else {
+      window.addEventListener(evt, handler);
+    }
+    return () => window.removeEventListener(evt, handler);
+  }
+
+  // padding to keep the nav dot centered at the bottom of the screen
+  function navPadding() {
+    const h = container.current?.clientHeight ?? 0;
+    return { top: h * 0.35, bottom: 0, left: 0, right: 0 };
+  }
+
+  // per-gps-fix update: dot position, camera, remaining distance, speed, eta
+  function handleFix(pos) {
+    const session = nav.current;
+    if (!session || !session.cumulative) return;
+    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+    const now = pos.timestamp ?? Date.now();
+
+    // ignore low-accuracy fixes (common indoors)
+    if (accuracy != null && accuracy > ACCURACY_GATE_M) return;
+
+    session.marker.setLngLat([lng, lat]);
+
+    // gps doppler when available, else distance over time between fixes
+    let mps = pos.coords.speed;
+    if ((mps == null || Number.isNaN(mps)) && session.lastFix) {
+      const dt = (now - session.lastFix.t) / 1000;
+      if (dt > 0.5)
+        mps =
+          haversineM(session.lastFix.lat, session.lastFix.lng, lat, lng) / dt;
+    }
+    if (mps != null && !Number.isNaN(mps)) {
+      let kmh = Math.min(mps * 3.6, MAX_KMH); //
+      if (kmh < STATIONARY_KMH) kmh = 0; // slow movement doesnt count (might be walking)
+      session.emaSpeedKmh =
+        session.emaSpeedKmh == null
+          ? kmh
+          : session.emaSpeedKmh * 0.8 + kmh * 0.2; // heavier smoothing to ride out gps jitter
+    }
+    session.lastFix = { lat, lng, t: now };
+
+    // progress along the route
+    const idx = nearestCoordIdx(session.coords, lat, lng);
+    const [rLng, rLat] = session.coords[idx];
+    const offM = haversineM(lat, lng, rLat, rLng);
+    const remainingM = Math.max(0, session.totalM - session.cumulative[idx]);
+    const offRoute = offM > OFF_ROUTE_M;
+
+    // while off route, draw a straight grey dashed line from the user to the closest route point
+    map.current.getSource("offroute")?.setData(
+      offRoute
+        ? {
+            type: "Feature",
+            geometry: {
+              type: "LineString",
+              coordinates: [
+                [lng, lat],
+                [rLng, rLat],
+              ],
+            },
+          }
+        : { type: "FeatureCollection", features: [] },
+    );
+
+    const speedKmh = session.emaSpeedKmh ?? 0;
+    const etaSpeed = speedKmh > 2 ? speedKmh : speedRef.current;
+    const etaMin =
+      etaSpeed > 0 ? Math.round((remainingM / 1000 / etaSpeed) * 60) : null;
+
+    setNavStats({
+      remainingM,
+      speedKmh,
+      etaMin,
+      offRoute,
+    });
+
+    // follow user on map
+    let bearing = session.heading;
+    if (
+      bearing == null &&
+      pos.coords.heading != null &&
+      !Number.isNaN(pos.coords.heading) &&
+      speedKmh > 5
+    ) {
+      bearing = pos.coords.heading;
+    }
+    const cam = {
+      center: [lng, lat],
+      zoom: NAV_ZOOM,
+      padding: navPadding(),
+      duration: 800,
+    };
+    if (bearing != null) {
+      cam.bearing = bearing;
+      session.marker.setRotation(bearing); // arrow points travel direction
+    }
+    map.current.easeTo(cam);
+  }
+
+  // start navigation along the current route
+  function startNavigation() {
+    if (!storedRouteCoords || nav.current) return;
+    if (!navigator.geolocation) {
+      setError("geolocation not supported on this browser");
+      return;
+    }
+
+    const session = {
+      coords: storedRouteCoords,
+      cumulative: null,
+      totalM: 0,
+      watchId: null,
+      stopCompass: null,
+      heading: null, // compass heading, degrees clockwise from north
+      lastFix: null, // { lat, lng, t } for fallback speed calc
+      emaSpeedKmh: null, // smoothed current speed
+      lastRotateAt: 0,
+      marker: null,
+    };
+    nav.current = session;
+
+    session.stopCompass = startCompass(session);
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+
+        // route the user to the first waypoint by prepending a lead-in segment
+        const firstWp = storedWaypoints[0];
+        const [fLng, fLat] = firstWp.lngLat;
+        const distToFirstM = haversineM(lat, lng, fLat, fLng);
+        const startNode = snapToNode(lat, lng);
+        if (
+          distToFirstM > LEADIN_MIN_M &&
+          startNode &&
+          firstWp &&
+          startNode !== firstWp.nodeId
+        ) {
+          const leadIn = findRoute(startNode, firstWp.nodeId);
+          if (leadIn)
+            session.coords = [
+              ...leadIn.geometry.coordinates,
+              ...session.coords,
+            ];
+        }
+        session.cumulative = buildCumulative(session.coords);
+        session.totalM = session.cumulative[session.cumulative.length - 1];
+
+        // show the lead-in on the map too
+        map.current.getSource("route").setData({
+          type: "Feature",
+          geometry: { type: "LineString", coordinates: session.coords },
+        });
+
+        // user dot, map-aligned so the arrow rotates with the map plane
+        session.marker = new Marker({
+          element: makeUserDot(),
+          rotationAlignment: "map",
+        })
+          .setLngLat([lng, lat])
+          .addTo(map.current);
+
+        setNavigating(true);
+
+        map.current.easeTo({
+          center: [lng, lat],
+          zoom: NAV_ZOOM,
+          padding: navPadding(),
+          duration: 800,
+        });
+        setNavStats({
+          remainingM: session.totalM,
+          speedKmh: 0,
+          etaMin: Math.round((session.totalM / 1000 / speedRef.current) * 60),
+          offRoute: false,
+        });
+
+        handleFix(pos);
+
+        session.watchId = navigator.geolocation.watchPosition(
+          handleFix,
+          () => {},
+          { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 },
+        );
+      },
+      () => {
+        session.stopCompass?.();
+        nav.current = null;
+        setError("couldn't get your location, check permissions");
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
+
+  // exit nav mode: stop sensors, remove the dot, restore the planned route view
+  function stopNavigation() {
+    const session = nav.current;
+    nav.current = null;
+    if (session) {
+      if (session.watchId != null)
+        navigator.geolocation.clearWatch(session.watchId);
+      session.stopCompass?.();
+      session.marker?.remove();
+    }
+    setNavigating(false);
+    setNavStats(null);
+
+    // put the planned route (without the lead-in) back, reset the nav camera padding, face north
+    map.current.easeTo({
+      bearing: 0,
+      padding: { top: 0, bottom: 0, left: 0, right: 0 },
+      duration: 600,
+    });
+    if (storedRouteCoords) {
+      map.current.getSource("route")?.setData({
+        type: "Feature",
+        geometry: { type: "LineString", coordinates: storedRouteCoords },
+      });
+      map.current.getSource("offroute")?.setData({
+        type: "FeatureCollection",
+        features: [],
+      });
+      fitToRoute(storedRouteCoords);
+    }
+  }
+
   // remove a waypoint by id, also removes its marker
   function handleRemoveWaypoint(id) {
     const entry = markers.current.find((m) => m.id === id);
@@ -438,16 +797,20 @@ export default function Map() {
     <div style={{ width: "100%", height: "100%", position: "relative" }}>
       <div ref={container} style={{ width: "100%", height: "100%" }} />
 
-      <SearchPanel
-        onGeocode={handleGeocode}
-        onError={setError}
-        onReset={reset}
-        onFlip={flip}
-        onRemoveWaypoint={handleRemoveWaypoint}
-        onReorder={handleReorder}
-        onUseCurrentLocation={handleUseCurrentLocation}
-        onFindNearest={handleFindNearest}
-      />
+      {/* search panel hidden during navigation so the map is unobstructed */}
+      {!navigating && (
+        <SearchPanel
+          onGeocode={handleGeocode}
+          onError={setError}
+          onReset={reset}
+          onFlip={flip}
+          onRemoveWaypoint={handleRemoveWaypoint}
+          onReorder={handleReorder}
+          onUseCurrentLocation={handleUseCurrentLocation}
+          onFindNearest={handleFindNearest}
+          onNavigate={startNavigation}
+        />
+      )}
 
       {/* loading message */}
       {loading && (
@@ -492,14 +855,18 @@ export default function Map() {
         </div>
       )}
 
-      <StatsPanel
-        speed={speed}
-        onSpeedChange={setSpeed}
-        networkVisible={networkVisible}
-        onToggleNetwork={toggleNetwork}
-        satelliteVisible={satelliteVisible}
-        onToggleSatellite={toggleSatellite}
-      />
+      {!navigating && (
+        <StatsPanel
+          speed={speed}
+          onSpeedChange={setSpeed}
+          networkVisible={networkVisible}
+          onToggleNetwork={toggleNetwork}
+          satelliteVisible={satelliteVisible}
+          onToggleSatellite={toggleSatellite}
+        />
+      )}
+
+      {navigating && <NavPanel stats={navStats} onExit={stopNavigation} />}
     </div>
   );
 }
