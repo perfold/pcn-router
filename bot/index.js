@@ -2,7 +2,7 @@
 // run: BOT_TOKEN=xxx node bot/index.js
 import { Bot, session, InlineKeyboard, InputFile } from "grammy";
 import { loadGraphFromDisk, snapToNode, findRoute } from "./graph-node.js";
-import { geocode } from "./geocode.js";
+import { geocode, findNearest } from "./geocode.js";
 import { buildGpx } from "./gpx.js";
 import { loadOverlay, renderRoutePng } from "./render.js";
 
@@ -32,6 +32,10 @@ bot.use(
 function shortLabel(label, max = 28) {
   const first = label.split(",")[0].trim();
   return first.length > max ? first.slice(0, max - 1) + "…" : first;
+}
+
+function fmtDistance(m) {
+  return m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(1)}km`;
 }
 
 function listText(waypoints) {
@@ -98,7 +102,7 @@ bot.command("start", (ctx) =>
       '• send an *address* \\(e\\.g\\. "waterway point"\\) or a *location pin* to add a stop\n' +
       "• reorder or remove stops with the buttons\n" +
       "• hit *route\\!* to get the path, distance, gpx file and a shareable link\n\n" +
-      "/add \\- add a stop\n/route \\- route the current stops\n/stops \\- show current stops\n/clear \\- start over",
+      "/add \\- add a stop\n/nearest \\- add the nearest \\<place\\> to your last stop \n/route \\- route the current stops\n/stops \\- show current stops\n/clear \\- start over",
     { parse_mode: "MarkdownV2" },
   ),
 );
@@ -129,6 +133,44 @@ bot.command("add", async (ctx) => {
 
   const res = addWaypoint(ctx, hit.lat, hit.lng, hit.label);
   if (!res.ok) return ctx.reply(res.err);
+  await showList(ctx);
+});
+
+// find the nearest <place> to the last stop and add it, e.g. /nearest 7-11
+bot.command("nearest", async (ctx) => {
+  const query = ctx.match?.trim();
+
+  if (!query) {
+    return ctx.reply(
+      "please provide a place to look for. for example:\n/nearest 7-11",
+    );
+  }
+  const wps = ctx.session.waypoints;
+  if (wps.length === 0) {
+    return ctx.reply(
+      "add a stop first so i know where to search from. send an address or a location pin.",
+    );
+  }
+
+  await ctx.replyWithChatAction("typing");
+  const [lng, lat] = wps[wps.length - 1].lngLat;
+  let hit;
+  try {
+    hit = await findNearest(query, lat, lng);
+  } catch {
+    return ctx.reply("geocoder is unreachable right now, try again in a bit.");
+  }
+  if (!hit) {
+    return ctx.reply(
+      `no "${query}" found within 8km of ${shortLabel(wps[wps.length - 1].label)}.`,
+    );
+  }
+
+  const res = addWaypoint(ctx, hit.lat, hit.lng, hit.label);
+  if (!res.ok) return ctx.reply(res.err);
+  await ctx.reply(
+    `nearest "${shortLabel(hit.label, 40)}, ~${fmtDistance(hit.distanceM)} away added as a stop.`,
+  );
   await showList(ctx);
 });
 

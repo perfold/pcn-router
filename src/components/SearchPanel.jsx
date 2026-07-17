@@ -12,9 +12,11 @@ export default function SearchPanel({
   onRemoveWaypoint,
   onReorder,
   onUseCurrentLocation,
+  onFindNearest,
 }) {
   const [query, setQuery] = useState(""); // single search input
   const [copied, setCopied] = useState(false);
+  const [findingNearest, setFindingNearest] = useState(false);
   const routeCoords = useStore((s) => s.routeCoords);
   const waypoints = useStore((s) => s.waypoints);
   const [listOpen, setListOpen] = useState(true);
@@ -43,6 +45,22 @@ export default function SearchPanel({
       e.preventDefault(); // prevents the "move to next field" behaviour on phone keyboard
       handleSubmit();
     }
+  }
+
+  // find the nearest match for the search text, relative to the last stop/current location
+  async function handleNearest() {
+    if (findingNearest) return;
+    if (!query.trim()) {
+      onError("type a place first, e.g. 7-11");
+      return;
+    }
+    setFindingNearest(true);
+    try {
+      await onFindNearest(query.trim());
+    } finally {
+      setFindingNearest(false);
+    }
+    setQuery("");
   }
 
   // export gpx function
@@ -114,6 +132,8 @@ ${trackpoints}
             fontSize: fs,
             padding: pad,
             flex: 1,
+            minWidth: 0,
+            textAlign: "center",
             boxSizing: "border-box",
             border: "1px solid #e5e7eb",
             borderRadius: 6,
@@ -126,16 +146,28 @@ ${trackpoints}
           ⇅
         </button>
       </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        {/* find the nearest match for the place in the search bar */}
+        <button
+          onClick={handleNearest}
+          disabled={findingNearest}
+          style={{ fontSize: fs, flex: 1 }}
+        >
+          {findingNearest ? "searching…" : "find nearest"}
+        </button>
 
-      {/* add current gps position as a waypoint */}
-      <button onClick={onUseCurrentLocation} style={{ fontSize: fs }}>
-        add current location
-      </button>
+        {/* add current gps position as a waypoint */}
+        <button
+          onClick={onUseCurrentLocation}
+          style={{ fontSize: fs, flex: 1 }}
+        >
+          add current location
+        </button>
 
-      <button onClick={onReset} style={{ fontSize: fs }}>
-        clear
-      </button>
-
+        <button onClick={onReset} style={{ fontSize: fs, flex: 1 }}>
+          clear
+        </button>
+      </div>
       {/* copy link + export gpx button side by side */}
       <div style={{ display: "flex", gap: 8 }}>
         <button

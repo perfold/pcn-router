@@ -12,6 +12,7 @@ a client-side bike route planner for Singapore that prioritises the Park Connect
 
 - **add current location**: start your route planning from your current location
 - **search or click**: type an address or click the map to add stops. plan a full day's journey across multiple destinations
+- **nearest `<place>`**: find the nearest `<place>` from your current waypoint
 - **multi-stop routing**: add as many stops as you want, drag to reorder, flip the whole route, or remove individual stops
 - **PCN-prioritised routing**: prefers dedicated cycling infrastructure over shared footways
 - **shareable routes**: copy the url once a route is loaded, recipients see the same route when they open it
@@ -50,7 +51,7 @@ paths that overlap with the government PCN/cycling reference data get a lower ro
 | frontend          | React + Vite                  |
 | map               | MapLibre GL JS                |
 | map tiles         | OpenFreeMap (bright)          |
-| routing algorithm | A\*                           |
+| routing algorithm | A\* algorithm                 |
 | spatial index     | rbush (nearest-node snapping) |
 | geocoding         | Nominatim (OpenStreetMap)     |
 | data pipeline     | Python (geopandas, osmnx)     |

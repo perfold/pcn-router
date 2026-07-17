@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Map as MaplibreMap, NavigationControl, Marker } from "maplibre-gl";
 import { loadGraph, snapToNode, findRoute } from "../lib/graph";
+import { findNearest } from "../lib/geocode";
 import StatsPanel from "./StatsPanel";
 import SearchPanel from "./SearchPanel";
 import { useIsMobile } from "../lib/isMobile";
@@ -331,6 +332,44 @@ export default function Map() {
     );
   }
 
+  // find the nearest <place> to the last stop and add it
+  async function handleFindNearest(query) {
+    if (!graphReady.current) return;
+    setError(null);
+
+    // reference point is last waypoint, else current gps position
+    let ref = null;
+    if (storedWaypoints.length > 0) {
+      const [lng, lat] = storedWaypoints[storedWaypoints.length - 1].lngLat;
+      ref = { lat, lng };
+    } else if (navigator.geolocation) {
+      ref = await new Promise((resolve) =>
+        navigator.geolocation.getCurrentPosition(
+          (pos) =>
+            resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          () => resolve(null),
+          { enableHighAccuracy: true, timeout: 10000 },
+        ),
+      );
+    }
+    if (!ref) {
+      setError("add a stop or allow location access first");
+      return;
+    }
+
+    let hit = null;
+    try {
+      hit = await findNearest(query, ref.lat, ref.lng);
+    } catch {}
+    if (!hit) {
+      setError(`no "${query}" found within 8km`);
+      return;
+    }
+
+    const name = hit.label.split(",")[0].trim();
+    handleGeocode(hit.lat, hit.lng, name);
+  }
+
   // remove a waypoint by id, also removes its marker
   function handleRemoveWaypoint(id) {
     const entry = markers.current.find((m) => m.id === id);
@@ -407,6 +446,7 @@ export default function Map() {
         onRemoveWaypoint={handleRemoveWaypoint}
         onReorder={handleReorder}
         onUseCurrentLocation={handleUseCurrentLocation}
+        onFindNearest={handleFindNearest}
       />
 
       {/* loading message */}
