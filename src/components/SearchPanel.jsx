@@ -11,6 +11,7 @@ export default function SearchPanel({
   onFlip,
   onRemoveWaypoint,
   onReorder,
+  onUseCurrentLocation,
 }) {
   const [query, setQuery] = useState(""); // single search input
   const [copied, setCopied] = useState(false);
@@ -125,6 +126,11 @@ ${trackpoints}
           ⇅
         </button>
       </div>
+
+      {/* add current gps position as a waypoint */}
+      <button onClick={onUseCurrentLocation} style={{ fontSize: fs }}>
+        add current location
+      </button>
 
       <button onClick={onReset} style={{ fontSize: fs }}>
         clear

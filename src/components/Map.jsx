@@ -299,6 +299,38 @@ export default function Map() {
     addWaypoint({ id, nodeId, lngLat: [lng, lat], label: name });
   }
 
+  // add the user's current location as a waypoint
+  function handleUseCurrentLocation() {
+    if (!graphReady.current) return;
+    if (!navigator.geolocation) {
+      setError("geolocation not supported on this browser");
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        const nodeId = snapToNode(lat, lng);
+        if (!nodeId) {
+          setError("couldn't find a cycleable path near you");
+          return;
+        }
+
+        setError(null);
+        const id = crypto.randomUUID();
+
+        // place marker
+        const marker = new Marker().setLngLat([lng, lat]).addTo(map.current);
+        markers.current.push({ id, marker });
+
+        map.current.flyTo({ center: [lng, lat], zoom: 14 }); // fly to added point
+        addWaypoint({ id, nodeId, lngLat: [lng, lat], label: "my location" });
+      },
+      () => setError("couldn't get your location, check permissions"),
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  }
+
   // remove a waypoint by id, also removes its marker
   function handleRemoveWaypoint(id) {
     const entry = markers.current.find((m) => m.id === id);
@@ -374,6 +406,7 @@ export default function Map() {
         onFlip={flip}
         onRemoveWaypoint={handleRemoveWaypoint}
         onReorder={handleReorder}
+        onUseCurrentLocation={handleUseCurrentLocation}
       />
 
       {/* loading message */}
